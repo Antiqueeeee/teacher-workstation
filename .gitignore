@@ -1,0 +1,41 @@
+# ---------- 环境与工具链（体积大、可重建，不入库）----------
+.validation/
+
+# ---------- 原始素材 ----------
+# raw-material 里只跟踪「要移植的那个 HTML」。
+# 录音/视频（689MB）、第三方素材（含一个嵌套 .git）留在本地即可。
+raw-material/meetings/
+raw-material/discussion/
+raw-material/discussion.zip
+
+# ---------- 运行期数据（数据库与媒体文件，绝不入库）----------
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+media/
+logs/
+backups/
+*.log
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/_out/
+
+# ---------- 前端 ----------
+node_modules/
+
+# ---------- 编辑器 / 系统 ----------
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
