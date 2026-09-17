@@ -1,0 +1,23 @@
+# 统一换行与二进制标记：仓库内一律 LF，避免 Windows 上反复出现 CRLF 转换告警
+* text=auto eol=lf
+
+# 二进制 / 原件，不做换行转换
+*.html   -text
+*.png    -text
+*.jpg    -text
+*.jpeg   -text
+*.mp4    -text
+*.wav    -text
+*.m4a    -text
+*.xlsx   -text
+*.sqlite -text
+*.zip    -text
+
+# 文本类型
+*.md   text
+*.py   text
+*.js   text
+*.css  text
+*.toml text
+*.json text
+*.yml  text
