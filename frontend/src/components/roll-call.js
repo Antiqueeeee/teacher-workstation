@@ -164,6 +164,7 @@ export async function openRollCall({ classId, day, onSaved } = {}) {
       });
 
       root.querySelector('[data-all-normal]').addEventListener('click', () => {
+        if (!view) return; // 还没载入成功（或载入失败）时按钮不该炸
         for (const item of view.students) selected.set(item.studentId, '');
         renderList();
       });
