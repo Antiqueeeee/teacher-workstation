@@ -94,7 +94,7 @@ export async function openStudentArchive(student, onChanged) {
             section(
               '成绩',
               data.scores.length
-                ? `<table class="table"><thead><tr><th>考试</th><th class="num">总分</th>
+                ? `<div class="table-wrap"><table class="table"><thead><tr><th>考试</th><th class="num">总分</th>
                      <th class="num">名次</th><th class="num">得分率</th><th>缺考/没录</th></tr></thead>
                    <tbody>${data.scores
                      .map(
@@ -104,7 +104,7 @@ export async function openStudentArchive(student, onChanged) {
                          <td class="num">${row.scoreRate === null ? DASH : `${row.scoreRate}%`}</td>
                          <td>${esc([...row.absent, ...row.missing].join('、') || '—')}</td></tr>`,
                      )
-                     .join('')}</tbody></table>`
+                     .join('')}</tbody></table></div>`
                 : '<div class="muted">还没有成绩</div>',
               '名次由后端现算',
             ),
