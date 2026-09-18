@@ -269,7 +269,11 @@ async function handleAction(name, paint, ctx) {
     try {
       const data = await api.seatRestore(store.currentClassId);
       picked = null;
-      toast('已回退');
+      toast(
+        data.clearedSeats
+          ? `已回退（${data.clearedSeats} 个座位的人已经不在学生档案里，按空位恢复）`
+          : '已回退',
+      );
       paint(data);
     } catch (error) {
       toast(error.message, 'err', 7000);

@@ -3,8 +3,9 @@
 清空数据是**唯一的破坏性操作**，所以规矩定得死一点：
 
 1. 要传一个确认串（`confirm="清空"`），不是点一下按钮就执行；
-2. **对所有已知表生效** —— 表的清单从模型元数据取，不手工维护
-   （旧应用只清种子键，懒建的表整体被丢弃，`:17617`）；
+2. **每张表都必须有明确的处置规则**（见下面的三张清单 + `unclassified_tables`）——
+   早期版本对「没有 `class_id` 列的表」一律无条件 DELETE，于是清 A 班会把 B 班的
+   未交名单、考试科目、调解参与人一起删光，而界面上完全看不出来（阶段 5 评审实测）；
 3. 动手之前先报**会删掉多少行**，让老师看清影响；
 4. 媒体文件**默认不动**（几千张照片删了找不回来），要一起删得显式说明。
 """
@@ -22,10 +23,71 @@ from app.models.class_ import Class
 from app.storage import media_store
 
 # 清空数据时要**保留**的表：班级本身与字段定义、应用配置是「骨架」，不是业务数据。
-# 媒体文件另算（见 clear_business_data 的 keep_media）。
 KEEP_TABLES = {"classes", "student_field_def", "app_state"}
 
+# 跨班共享的表：它们没有 class_id，但**不属于某一个班** —— 清一个班不该动它们。
+# 模板是全班共用的素材；课程天生跨班（任课教师一门课教几个班，清掉一个班的块
+# 不等于把课程删了 —— 那些块自己带 class_id，会被正常清掉）。
+SHARED_TABLES = {"templates": "全班共用的素材", "courses": "课程（可能跨班）"}
+
+# 没有 class_id 列的**子表**：删的时候按父表的班级过滤。
+# 这几张表早先会被无条件 DELETE —— 这就是上面第 2 条说的那个事故。
+CHILD_TABLES = {
+    "homework_unsubmitted": ("homework", "homework_id"),
+    "exam_subjects": ("exams", "exam_id"),
+    "conflict_parties": ("conflicts", "conflict_id"),
+    "duty_members": ("duty_groups", "duty_id"),
+}
+
+# 骨架表的中文名（业务表的名字从注册表取，这里只补不属于注册表的那几张）
+SKELETON_TITLES = {
+    "classes": "班级本身",
+    "student_field_def": "学生档案字段定义",
+    "app_state": "应用配置",
+    "media": "照片与录音",
+}
+
 CONFIRM_WORD = "清空"
+
+
+def unclassified_tables() -> set[str]:
+    """既不是班级范围、也没归进上面三张清单的表 —— **必须为空**（有测试守着）。
+
+    这张清单的意义在于**失败要往安全的方向倒**：新加一张没 `class_id` 的表时，
+    如果没人给它定处置规则，宁可测试红掉，也不能顺手把它整表删了。
+    """
+    known = KEEP_TABLES | set(SHARED_TABLES) | set(CHILD_TABLES) | {"media"}
+    return {
+        table.name
+        for table in Base.metadata.sorted_tables
+        if table.name not in known and "class_id" not in table.columns
+    }
+
+
+def _delete_scoped(session: Session, table: Any, class_id: int):
+    """删这张表里属于这个班的行。返回执行结果（拿 rowcount）。"""
+    if "class_id" in table.columns:
+        return session.execute(table.delete().where(table.c.class_id == class_id))
+    parent_name, fk_column = CHILD_TABLES[table.name]
+    parent = Base.metadata.tables[parent_name]
+    parent_ids = select(parent.c.id).where(parent.c.class_id == class_id)
+    return session.execute(table.delete().where(table.c[fk_column].in_(parent_ids)))
+
+
+def _count_scoped(session: Session, table: Any, class_id: int) -> int:
+    """这张表里属于这个班的行数（与 `_delete_scoped` 同一套归属判定）。"""
+    if "class_id" in table.columns:
+        return session.scalar(
+            select(func.count()).select_from(table).where(table.c.class_id == class_id)
+        ) or 0
+    if table.name in CHILD_TABLES:
+        parent_name, fk_column = CHILD_TABLES[table.name]
+        parent = Base.metadata.tables[parent_name]
+        parent_ids = select(parent.c.id).where(parent.c.class_id == class_id)
+        return session.scalar(
+            select(func.count()).select_from(table).where(table.c[fk_column].in_(parent_ids))
+        ) or 0
+    return session.scalar(select(func.count()).select_from(table)) or 0
 
 
 def get_class(session: Session, class_id: int) -> Class:
@@ -82,20 +144,33 @@ def settings_view(session: Session, class_id: int) -> dict[str, Any]:
 
 
 def table_counts(session: Session, class_id: int) -> list[dict[str, Any]]:
-    """每张业务表各有多少行（清空数据之前让老师看清影响）。"""
-    counts = []
+    """清空数据之前让老师看清影响：**会删多少行**，以及哪些表只是保留。
+
+    表名给中文（旧版把 `homework_unsubmitted` 这种英文表名直接摆给老师看，
+    列了行数也看不出是什么表）。`kept=True` 的是共享表：它们不在清理范围内。
+    """
+    from app.schemas.registry import get_spec  # 局部导入：避免 services ↔ schemas 的导入环
+
+    rows = []
     for table in Base.metadata.sorted_tables:
         if table.name in KEEP_TABLES:
             continue
-        # 有 class_id 的表按班统计，没有的（如媒体）统计全部
-        if "class_id" in table.columns:
-            count = session.scalar(
-                select(func.count()).select_from(table).where(table.c.class_id == class_id)
-            )
-        else:
-            count = session.scalar(select(func.count()).select_from(table))
-        counts.append({"table": table.name, "rows": count or 0})
-    return counts
+        spec = get_spec(table.name)
+        title = (
+            spec.title
+            if spec is not None
+            else SKELETON_TITLES.get(table.name, SHARED_TABLES.get(table.name, table.name))
+        )
+        rows.append(
+            {
+                "table": table.name,
+                "title": title,
+                "rows": _count_scoped(session, table, class_id),
+                "kept": table.name in SHARED_TABLES,
+                "reason": SHARED_TABLES.get(table.name, ""),
+            }
+        )
+    return rows
 
 
 def clear_business_data(
@@ -117,17 +192,14 @@ def clear_business_data(
 
     # 先子表后主表：外键开着，先删主表会被约束拦下
     for table in reversed(Base.metadata.sorted_tables):
-        if table.name in KEEP_TABLES:
+        if table.name in KEEP_TABLES or table.name in SHARED_TABLES:
             continue
-        if "class_id" in table.columns:
-            # 媒体库**单独处理**：它与业务数据不是一回事，而且已经有专门的清理入口
-            # （「存储与清理」能按日期、按学生清）。所以「清空数据」默认不动它 ——
-            # 几千张照片删了找不回来，不该混在一个顺手点的按钮里
-            if table.name == "media":
-                continue
-            result = session.execute(table.delete().where(table.c.class_id == class_id))
-        else:
-            result = session.execute(table.delete())
+        # 媒体库**单独处理**：它与业务数据不是一回事，而且已经有专门的清理入口
+        # （「存储与清理」能按日期、按学生清）。所以「清空数据」默认不动它 ——
+        # 几千张照片删了找不回来，不该混在一个顺手点的按钮里
+        if table.name == "media":
+            continue
+        result = _delete_scoped(session, table, class_id)
         removed += result.rowcount or 0
 
     if not keep_media:

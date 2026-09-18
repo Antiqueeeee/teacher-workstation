@@ -256,6 +256,63 @@ def class_students_missing_records(session: Session, category: FeeCategory) -> l
     return [student.name for student in students if student.id not in recorded]
 
 
+def create_records(
+    session: Session, category: FeeCategory, names: list[str] | None = None
+) -> dict[str, Any]:
+    """给一批学生各建一条应缴记录（应缴按项目当前标准，存成快照）。
+
+    默认给**还没建记录的**学生建 —— 收班费时的常规动作是「全班一次建齐，
+    之后逐个登记实缴」。也可以指定姓名；认不出的整批不建（与别处的名单解析同一条规矩）。
+    """
+    if names:
+        targets: list[Student] = []
+        problems: list[str] = []
+        for name in names:
+            student, problem, _kind = find_student(
+                session, name=name, class_id=category.class_id, label="学生"
+            )
+            if problem is not None:
+                problems.append(problem)
+            else:
+                targets.append(student)
+        if problems:
+            raise ApiError(
+                INVALID_VALUE,
+                "名单里有认不出的学生：" + "；".join(problems),
+                detail={"field": "names"},
+            )
+    else:
+        missing = set(class_students_missing_records(session, category))
+        targets = [
+            student
+            for student in session.scalars(
+                select(Student).where(
+                    Student.deleted_at.is_(None), Student.class_id == category.class_id
+                )
+            )
+            if student.name in missing
+        ]
+
+    for student in targets:
+        session.add(
+            FeeRecord(
+                class_id=category.class_id,
+                category_id=category.id,
+                student_id=student.id,
+                student_name=student.name,
+                # 应缴是**快照**：之后改类别标准不该改写已经建好的记录
+                should_pay_cents=category.amount_cents,
+                paid_cents=0,
+            )
+        )
+    session.flush()
+    return {
+        "categoryId": category.id,
+        "created": len(targets),
+        "studentNames": [student.name for student in targets],
+    }
+
+
 def totals_for_status(session: Session, class_id: int) -> dict[str, int]:
     """全班各状态的记录数（KPI 用）。"""
     counts = {status: 0 for status in FEE_STATUSES}

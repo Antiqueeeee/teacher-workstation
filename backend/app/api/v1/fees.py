@@ -15,6 +15,7 @@ from app.services.class_scope import resolve_class_id
 from app.services.fee_service import (
     category_summary,
     class_students_missing_records,
+    create_records,
     get_category,
     overview,
     student_owing,
@@ -47,6 +48,25 @@ def get_category_detail(category_id: int, session: Session = Depends(get_session
             "missing": class_students_missing_records(session, category),
         },
     }
+
+
+@router.post("/categories/{category_id}/records")
+def post_records(
+    category_id: int,
+    body: dict = Body(default_factory=dict),
+    session: Session = Depends(get_session),
+):
+    """给一批学生各建一条应缴记录（默认给还没建记录的）。
+
+    这是「收班费」的常规起点：全班一次建齐，之后逐个登记实缴 ——
+    旧应用有「从学生档案勾选加入名单」，这里改成按姓名（或留空表示全部漏收的）。
+    """
+    category = get_category(session, category_id)
+    names = body.get("names")
+    if isinstance(names, str):
+        names = [name for name in names.replace("、", ",").split(",") if name.strip()]
+    result = create_records(session, category, list(names) if names else None)
+    return {"ok": True, "data": result}
 
 
 @router.put("/categories/{category_id}/amount")

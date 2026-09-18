@@ -182,6 +182,12 @@ export const api = {
       method: 'PUT',
       body: { amountCents, backfill },
     }).then((p) => p.data),
+  /** 给一批学生各建一条应缴记录（留空 = 给还没建记录的全体学生建）。 */
+  feeCreateRecords: (categoryId, names) =>
+    request(`/fees/categories/${categoryId}/records`, {
+      method: 'POST',
+      body: { names },
+    }).then((p) => p.data),
 
   /** 学科与成绩：课程看板 / 课程详情 / 成绩分析 / 批量加名单。
    *  得分率、及格、名次全部由后端算（按满分算，不写死 60 分）—— 界面只显示。 */

@@ -16,7 +16,7 @@ from app.api.errors import TABLE_NOT_FOUND, ApiError
 from app.db.engine import get_session
 from app.schemas.registry import TableSpec, get_spec
 from app.services import table_io
-from app.services.table_query import build_list_query
+from app.services.table_query import export_rows
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MAX_EXPORT_ROWS = 20000  # 防止一次导出把内存和 Excel 都拖垮
@@ -34,8 +34,7 @@ def _spec(table: str) -> TableSpec:
 @router.get("/export/{table}.xlsx")
 def export_xlsx(table: str, request: Request, session: Session = Depends(get_session)):
     spec = _spec(table)
-    query = build_list_query(spec, session, request.query_params)
-    rows = list(session.scalars(query.stmt.limit(MAX_EXPORT_ROWS)))
+    rows = export_rows(session, spec, request.query_params, MAX_EXPORT_ROWS)
     if len(rows) == MAX_EXPORT_ROWS:
         raise ApiError(
             "EXPORT_TOO_LARGE",

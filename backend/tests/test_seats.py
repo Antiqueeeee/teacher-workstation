@@ -489,3 +489,44 @@ def test_shift_reports_seats_that_fall_outside_the_grid(client, db_session):
     )
     assert response.status_code == 400, response.text
     assert "落在座位表外面" in response.json()["error"]["message"]
+
+
+def test_restore_after_clear_data_does_not_explode(client, db_session):
+    """清空数据之后回退座位：**人已经不在了，不能 500**（阶段 5 评审 M4）。
+
+    清空数据是硬删学生，而座位快照存在 app_state 里（被保留）—— 回退时按快照插座位
+    会撞外键，界面看到的是「服务内部错误：IntegrityError」，而看板还在说「可以回退」。
+    现在按空位恢复并**如实报出有几个座位的人已经不在档案里**。
+    """
+    class_id = _class_id(db_session)
+    _student(db_session, "回退甲", "S9201")
+    _student(db_session, "回退乙", "S9202")
+    _seat(client, class_id, 1, 1, "回退甲")
+    _seat(client, class_id, 2, 1, "回退乙")
+    client.post("/api/v1/seats/randomize", params={"classId": class_id})  # 存下快照
+
+    client.post("/api/v1/settings/clear", json={"confirm": "清空"}, params={"classId": class_id})
+    assert client.get("/api/v1/students", params={"classId": class_id}).json()["meta"]["total"] == 0
+
+    response = client.post("/api/v1/seats/restore", params={"classId": class_id})
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["restored"] == 2
+    assert data["clearedSeats"] == 2  # 两个人都不在档案里了
+    assert all(cell["studentName"] == "" for row in data["grid"] for cell in row)
+
+
+def test_restore_keeps_soft_deleted_students_in_place(client, db_session):
+    """软删除的学生（转学）不受影响：行还在库里，座位照旧恢复。
+
+    与「人已经不在了」分开，是因为这两件事在老师眼里不是一回事：
+    转出去的学生，座位表上还留着他的位置（看板会标出来）。
+    """
+    class_id = _class_id(db_session)
+    student = _student(db_session, "转出甲", "S9203")
+    _seat(client, class_id, 1, 1, "转出甲")
+    client.post("/api/v1/seats/randomize", params={"classId": class_id})
+    assert client.delete(f"/api/v1/students/{student.id}", params={"classId": class_id}).status_code == 200
+
+    data = client.post("/api/v1/seats/restore", params={"classId": class_id}).json()["data"]
+    assert data["clearedSeats"] == 0

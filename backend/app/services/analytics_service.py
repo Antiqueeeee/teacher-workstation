@@ -26,10 +26,13 @@ from app.models.media import Media
 from app.models.student import Student
 from app.models.todo import Todo
 from app.services.attendance_rate import range_summary
+from app.services.contact_service import follow_up_count, follow_ups
 from app.services.roster import count_class_students
 from app.services.student_service import identity_conflicts
 
 # 跟进清单的规则：紧急度权重 + 观察窗口。权重大的排前面。
+# 窗口是**规则的一部分**（旧应用把窗口写死，这里做成配置项、默认值沿用现状）。
+# 首页卡片的计数与列表**用同一个窗口** —— 否则会出现「卡片说 3 件、点开只有 1 件」。
 FOLLOWUP_RULES = {
     "absent_uncontacted": {"weight": 95, "days": 7, "label": "缺席还没联系家长"},
     "discipline_open": {"weight": 80, "days": 30, "label": "违纪未结案"},
@@ -85,15 +88,9 @@ def overview(session: Session, class_id: int) -> dict[str, Any]:
         .where(Todo.deleted_at.is_(None), Todo.class_id == class_id, Todo.done.is_(False))
     ) or 0
 
-    follow_up_contacts = session.scalar(
-        select(func.count())
-        .select_from(ContactLog)
-        .where(
-            ContactLog.deleted_at.is_(None),
-            ContactLog.class_id == class_id,
-            ContactLog.needs_follow_up.is_(True),
-        )
-    ) or 0
+    follow_up_contacts = follow_up_count(
+        session, class_id, since=_recent_days(FOLLOWUP_RULES["contact_follow_up"]["days"])
+    )
 
     conflicts = identity_conflicts(session, class_id)
 
@@ -161,17 +158,9 @@ def followups(session: Session, class_id: int, limit: int = 14) -> list[dict[str
             }
         )
 
-    # 2. 家长那边还要再联系
+    # 2. 家长那边还要再联系（与 /contacts/follow-ups 同一个函数，窗口也取同一个规则）
     window = _recent_days(FOLLOWUP_RULES["contact_follow_up"]["days"])
-    contact_rows = session.scalars(
-        select(ContactLog).where(
-            ContactLog.deleted_at.is_(None),
-            ContactLog.class_id == class_id,
-            ContactLog.needs_follow_up.is_(True),
-            ContactLog.date >= window if window else True,
-        )
-    )
-    for row in contact_rows:
+    for row in follow_ups(session, class_id, since=window):
         items.append(
             {
                 "kind": "contact_follow_up",
@@ -233,8 +222,11 @@ def followups(session: Session, class_id: int, limit: int = 14) -> list[dict[str
             }
         )
 
-    # 重的排前面；同权重按日期倒序（最近发生的先看）
-    items.sort(key=lambda item: (-item["weight"], item["date"]), reverse=False)
+    # 排序分两步（都是稳定排序）：先按日期**倒序**（最近发生的先看），再按权重降序 ——
+    # 同权重内因此保持日期倒序。一步写 `(-weight, date)` 是**升序日期**，
+    # 与注释说的正好相反（评审抓到的就是这个：注释与行为不一致）
+    items.sort(key=lambda item: item["date"], reverse=True)
+    items.sort(key=lambda item: -item["weight"])
     return items[: max(1, min(limit, 100))]
 
 

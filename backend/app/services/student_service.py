@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import INVALID_VALUE, NOT_FOUND, ApiError
 from app.db.engine import SessionLocal
-from app.models.attendance import ABSENCE_TYPES
 from app.models.student import Student, StudentFieldDef
 from app.schemas.registry import DYNAMIC_TABLES, ColumnSpec, FieldSpec, TableSpec
 from app.services.student_fields import build_defs_from_template
@@ -181,7 +180,11 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
     from app.models.homework import Homework, HomeworkUnsubmitted
     from app.models.media import Media
     from app.models.welfare import Grant, HealthRecord
-    from app.services.attendance_rate import range_summary
+    from app.services.attendance_rate import (
+        absence_day_count,
+        compute_rate,
+        registered_day_count,
+    )
     from app.services.score_stats import build_report
 
     student = session.get(Student, student_id)
@@ -196,31 +199,36 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
         return list(session.scalars(query.limit(limit if limit is not None else recent)))
 
     # ---- 出勤：按类型计数 + 出勤率 ----
-    # 出勤率的分母是**这个班登记过的天数**（与出勤页同一口径）：
-    # 没登记的日子不算满勤，缺席也只在登记过的日子上才有意义
+    # 出勤率的分母是**这个班登记过的天数**（与出勤页同一口径、同一个 compute_rate）：
+    # 没登记的日子不算满勤，缺席也只在登记过的日子上才有意义。
+    # 两个数都用 SQL 现算，**不取最近 N 条再数** —— 数总量时被截断是静默少算。
     attendance_rows = latest(
-        Attendance, Attendance.student_id == student_id, order=Attendance.date.desc(), limit=200
+        Attendance, Attendance.student_id == student_id, order=Attendance.date.desc()
     )
-    by_type: dict[str, int] = {}
-    for row in attendance_rows:
-        by_type[row.type] = by_type.get(row.type, 0) + 1
-
-    absence_days = sum(1 for row in attendance_rows if row.type in ABSENCE_TYPES)
-    registered_days = 0
-    attendance_rate: int | None = None
-    # 窗口取**这个班登记过考勤的日子**，不是这个学生自己的记录范围 ——
-    # 否则「本学期只请过一次假」的分母只有那一天，算出来是 0%（第一次做就踩了）
-    span = session.execute(
-        select(func.min(Attendance.date), func.max(Attendance.date)).where(
-            Attendance.class_id == student.class_id
+    by_type = {
+        row_type: count
+        for row_type, count in session.execute(
+            select(Attendance.type, func.count())
+            .where(Attendance.student_id == student_id)
+            .group_by(Attendance.type)
         )
-    ).one()
-    if span[0] is not None:
-        registered_days = range_summary(session, student.class_id, span[0], span[1]).registered_days
-        if registered_days:
-            attendance_rate = round((registered_days - absence_days) / registered_days * 100)
+    }
+    absence_days = absence_day_count(session, student.class_id, student_id)
+    registered_days = registered_day_count(session, student.class_id)
+    attendance_rate = compute_rate(registered_days, absence_days)
 
     # ---- 作业：欠交次数（与首页「作业待收」、作业页读的是同一张子表）----
+    # 已软删的作业不算欠交（与作业页一致）；总数也现算，不看窗口
+    late_count = session.scalar(
+        select(func.count())
+        .select_from(HomeworkUnsubmitted)
+        .join(Homework, Homework.id == HomeworkUnsubmitted.homework_id)
+        .where(
+            HomeworkUnsubmitted.student_id == student_id,
+            Homework.deleted_at.is_(None),
+            Homework.class_id == student.class_id,
+        )
+    ) or 0
     late_links = latest(
         HomeworkUnsubmitted,
         HomeworkUnsubmitted.student_id == student_id,
@@ -228,7 +236,7 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
         limit=200,
     )
     late_recent: list[dict[str, Any]] = []
-    for link in late_links[:recent]:
+    for link in late_links:
         homework = session.get(Homework, link.homework_id)
         if homework is None or homework.deleted_at is not None:
             continue
@@ -240,6 +248,8 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
                 "content": homework.content,
             }
         )
+        if len(late_recent) >= recent:
+            break
 
     # ---- 成绩：最近几场的总分与名次（名次由 score_stats 现算，不落库）----
     score_rows: list[dict[str, Any]] = []
@@ -281,8 +291,22 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
         if any(party.student_id == student_id for party in row.parties)
     ]
 
+    # 助学金：总额现算（不看窗口 —— 截断 200 条会让「一共资助了多少」少算），
+    # 已软删的不算；列表仍只取最近几条
+    grant_total_cents = int(
+        session.scalar(
+            select(func.coalesce(func.sum(Grant.amount_cents), 0)).where(
+                Grant.student_id == student_id, Grant.deleted_at.is_(None)
+            )
+        )
+        or 0
+    )
     grants_all = latest(
-        Grant, Grant.student_id == student_id, order=Grant.apply_date.desc(), limit=200
+        Grant,
+        Grant.student_id == student_id,
+        Grant.deleted_at.is_(None),
+        order=Grant.apply_date.desc(),
+        limit=200,
     )
     health = session.scalars(
         select(HealthRecord).where(
@@ -314,12 +338,17 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
                 for row in attendance_rows[:recent]
             ],
         },
-        "homework": {"lateCount": len(late_links), "recent": late_recent},
+        "homework": {"lateCount": late_count, "recent": late_recent},
         "scores": score_rows,
         "discipline": {
-            "total": count(Discipline, Discipline.student_id == student_id),
+            "total": count(
+                Discipline, Discipline.student_id == student_id, Discipline.deleted_at.is_(None)
+            ),
             "open": count(
-                Discipline, Discipline.student_id == student_id, Discipline.status != "已结案"
+                Discipline,
+                Discipline.student_id == student_id,
+                Discipline.status != "已结案",
+                Discipline.deleted_at.is_(None),
             ),
             "recent": [
                 {
@@ -331,12 +360,15 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
                     "detail": row.detail,
                 }
                 for row in latest(
-                    Discipline, Discipline.student_id == student_id, order=Discipline.date.desc()
+                    Discipline,
+                    Discipline.student_id == student_id,
+                    Discipline.deleted_at.is_(None),
+                    order=Discipline.date.desc(),
                 )
             ],
         },
         "talks": {
-            "total": count(Talk, Talk.student_id == student_id),
+            "total": count(Talk, Talk.student_id == student_id, Talk.deleted_at.is_(None)),
             "recent": [
                 {
                     "id": row.id,
@@ -344,11 +376,16 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
                     "type": row.type,
                     "reason": row.reason,
                 }
-                for row in latest(Talk, Talk.student_id == student_id, order=Talk.date.desc())
+                for row in latest(
+                    Talk,
+                    Talk.student_id == student_id,
+                    Talk.deleted_at.is_(None),
+                    order=Talk.date.desc(),
+                )
             ],
         },
         "visits": {
-            "total": count(Visit, Visit.student_id == student_id),
+            "total": count(Visit, Visit.student_id == student_id, Visit.deleted_at.is_(None)),
             "recent": [
                 {
                     "id": row.id,
@@ -356,15 +393,23 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
                     "teacher": row.teacher,
                     "consensus": row.consensus,
                 }
-                for row in latest(Visit, Visit.student_id == student_id, order=Visit.date.desc())
+                for row in latest(
+                    Visit,
+                    Visit.student_id == student_id,
+                    Visit.deleted_at.is_(None),
+                    order=Visit.date.desc(),
+                )
             ],
         },
         "contacts": {
-            "total": count(ContactLog, ContactLog.student_id == student_id),
+            "total": count(
+                ContactLog, ContactLog.student_id == student_id, ContactLog.deleted_at.is_(None)
+            ),
             "followUp": count(
                 ContactLog,
                 ContactLog.student_id == student_id,
                 ContactLog.needs_follow_up.is_(True),
+                ContactLog.deleted_at.is_(None),
             ),
             "recent": [
                 {
@@ -375,7 +420,10 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
                     "content": row.content,
                 }
                 for row in latest(
-                    ContactLog, ContactLog.student_id == student_id, order=ContactLog.date.desc()
+                    ContactLog,
+                    ContactLog.student_id == student_id,
+                    ContactLog.deleted_at.is_(None),
+                    order=ContactLog.date.desc(),
                 )
             ],
         },
@@ -393,7 +441,7 @@ def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, 
             ],
         },
         "grants": {
-            "totalCents": sum(row.amount_cents for row in grants_all),
+            "totalCents": grant_total_cents,
             "recent": [
                 {
                     "id": row.id,

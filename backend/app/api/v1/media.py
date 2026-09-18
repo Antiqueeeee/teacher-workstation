@@ -172,9 +172,7 @@ def delete(media_id: int, session: Session = Depends(get_session)):
 @router.post("/{media_id}/restore")
 def restore(media_id: int, session: Session = Depends(get_session)):
     """从回收站恢复。"""
-    media = session.get(Media, media_id)
-    if media is None:
-        raise ApiError(NOT_FOUND, "这个附件不存在", status=404, detail={"id": media_id})
+    media = media_service.get_media(session, media_id, include_deleted=True)
     media_service.restore_media(session, media)
     session.commit()  # 同上：文件已经挪回来了
     return {"ok": True, "data": to_dict(media)}

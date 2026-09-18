@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.errors import INVALID_VALUE, ApiError
@@ -195,3 +195,44 @@ def range_summary(session: Session, class_id: int | None, start: date, end: date
 
 def day_summary(session: Session, class_id: int | None, day: date) -> DaySummary:
     return range_summary(session, class_id, day, day).days[0]
+
+
+def registered_day_count(session: Session, class_id: int | None) -> int:
+    """这个班**登记过考勤的天数**（出勤率的分母），一条 SQL 算出来。
+
+    与 `RangeSummary.registered_days` 同一口径（有记录就算登记过，
+    哪怕那天只剩转出学生的记录），但**不按天铺开** —— 一生一档要用它当分母，
+    而那个跨度是**数据决定的**：考勤只记异常，两个学年之间可能空着大半年，
+    走 `range_summary` 会撞上「一次最多 400 天」的护栏，于是用了两年的老师
+    档案与评语整个打不开（阶段 5 评审实测）。
+    """
+    if not class_id:
+        return 0
+    return int(
+        session.scalar(
+            select(func.count(func.distinct(Attendance.date))).where(
+                Attendance.class_id == class_id
+            )
+        )
+        or 0
+    )
+
+
+def absence_day_count(session: Session, class_id: int | None, student_id: int) -> int:
+    """这个学生**缺席的天数**（一天算一次，与出勤页「当天去重后的缺席人数」一致）。
+
+    旧写法是取这个学生最近 200 条记录再逐条数 —— 两百条之后的缺勤**静默消失**，
+    而「欠交多少次、缺勤多少天」正是要看总量。
+    """
+    if not class_id:
+        return 0
+    return int(
+        session.scalar(
+            select(func.count(func.distinct(Attendance.date))).where(
+                Attendance.class_id == class_id,
+                Attendance.student_id == student_id,
+                Attendance.type.in_(ABSENCE_TYPES),
+            )
+        )
+        or 0
+    )

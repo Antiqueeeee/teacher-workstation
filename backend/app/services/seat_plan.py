@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import INVALID_VALUE, NOT_FOUND, ApiError
 from app.models.app_state import AppState
 from app.models.seat import MAX_COLS, MAX_ROWS, DEFAULT_COLS, DEFAULT_ROWS, DEFAULT_RULE, Seat, SeatPlan
+from app.models.student import Student
 from app.services.params import as_int
 
 SNAPSHOT_KEY = "seat_snapshot"
@@ -143,15 +144,25 @@ def restore(session: Session, class_id: int) -> dict[str, Any]:
 
     session.execute(delete(Seat).where(Seat.class_id == class_id))
     plan.rows, plan.cols = rows, cols
+    # 学生可能已经不在了：清空数据是**硬删**学生，而快照存在 app_state 里（被保留），
+    # 于是回退时按快照插座位会撞外键 → 界面得到 500「服务内部错误」（评审实测）。
+    # 只认**真的不存在**的学生（软删的学生行还在，座位照旧恢复，看板会把他标成「档案里没有」）
+    existing_ids = set(session.scalars(select(Student.id)))
     restored = 0
+    cleared = 0
     for item in seat_items:
+        student_id = item.get("student_id")
+        if student_id is not None and student_id not in existing_ids:
+            student_id = None
+            cleared += 1
         session.add(
             Seat(
                 class_id=class_id,
                 row=item["row"],
                 col=item["col"],
-                student_id=item.get("student_id"),
-                student_name=item.get("student_name", ""),
+                student_id=student_id,
+                # 人不在了就别留名字，否则看板上会显示一个查不到的人
+                student_name="" if student_id is None else item.get("student_name", ""),
                 note=item.get("note", ""),
                 locked=bool(item.get("locked")),
             )
@@ -159,4 +170,4 @@ def restore(session: Session, class_id: int) -> dict[str, Any]:
         restored += 1
     session.delete(row)  # 回退一次就用掉，免得连点两次往回退到更早的状态
     session.flush()
-    return {"restored": restored}
+    return {"restored": restored, "clearedSeats": cleared}

@@ -16,9 +16,29 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.errors import INVALID_VALUE, NOT_FOUND, ApiError
 from app.models.student import StudentFieldDef
+# 从 table_spec 取类型表，**不走 registry**：registry 会 import 各域 specs，
+# 而 specs 又要 import 服务层 —— 走它在导入链上会成环
+from app.schemas.table_spec import FIELD_TYPES
 
 DEFAULT_FIELDS_PATH = Path(__file__).resolve().parent / "default_student_fields.json"
+
+# 字段定义里**允许改**的属性（改 key 会让历史数据失去归属，见 update_def）
+EDITABLE_ATTRS = (
+    "label",
+    "type",
+    "options",
+    "required",
+    "in_list",
+    "in_form",
+    "in_detail",
+    "searchable",
+    "filterable",
+    "sort_order",
+    "aliases",
+    "hint",
+)
 
 # 这些字段在新模型里属于「监护人」子表，不再作为学生的动态字段
 # （旧应用把它们同时放在学生档案和联系人表里，是同一件事两处存）
@@ -91,3 +111,102 @@ def seed_field_defs(session: Session) -> int:
         session.add(definition)
         created += 1
     return created
+
+
+# ------------------------------------------------- 字段管理的读写（接口层不再写 SQL）
+
+
+def list_defs(session: Session) -> list[StudentFieldDef]:
+    return list(
+        session.scalars(
+            select(StudentFieldDef).order_by(StudentFieldDef.sort_order, StudentFieldDef.id)
+        )
+    )
+
+
+def get_def(session: Session, field_id: int) -> StudentFieldDef:
+    definition = session.get(StudentFieldDef, field_id)
+    if definition is None:
+        raise ApiError(NOT_FOUND, "这个字段不存在，可能已被删除", status=404, detail={"id": field_id})
+    return definition
+
+
+def check_type(value: Any) -> str:
+    if value not in FIELD_TYPES:
+        raise ApiError(
+            INVALID_VALUE,
+            f"字段类型只能是：{'、'.join(FIELD_TYPES)}",
+            detail={"field": "type", "value": value},
+        )
+    return str(value)
+
+
+def create_def(session: Session, body: dict[str, Any]) -> StudentFieldDef:
+    """加一个字段。标识（key）是数据存储用的键，所以校验得细一点。"""
+    key = str(body.get("key") or "").strip()
+    label = str(body.get("label") or "").strip()
+    if not key or not label:
+        raise ApiError(INVALID_VALUE, "字段标识与名称都必填", detail={"field": "key"})
+    if not key.isascii() or not key.replace("_", "").isalnum():
+        raise ApiError(
+            INVALID_VALUE,
+            "字段标识请用英文字母/数字/下划线（它同时是 Excel 列名匹配与数据存储用的键）",
+            detail={"field": "key", "value": key},
+        )
+    if session.scalar(select(StudentFieldDef).where(StudentFieldDef.key == key)) is not None:
+        raise ApiError(INVALID_VALUE, f"已经有一个字段叫「{key}」了", detail={"field": "key"})
+
+    max_order = session.scalar(
+        select(StudentFieldDef.sort_order).order_by(StudentFieldDef.sort_order.desc()).limit(1)
+    )
+    definition = StudentFieldDef(
+        key=key,
+        label=label,
+        type=check_type(body.get("type") or "text"),
+        options=list(body.get("options") or []),
+        required=bool(body.get("required")),
+        in_list=bool(body.get("in_list", True)),
+        in_form=bool(body.get("in_form", True)),
+        in_detail=bool(body.get("in_detail", True)),
+        searchable=bool(body.get("searchable")),
+        filterable=bool(body.get("filterable")),
+        sort_order=int(body.get("sort_order") or (max_order or 0) + 1),
+        aliases=list(body.get("aliases") or []),
+        hint=str(body.get("hint") or ""),
+    )
+    session.add(definition)
+    session.flush()
+    return definition
+
+
+def update_def(session: Session, field_id: int, body: dict[str, Any]) -> StudentFieldDef:
+    definition = get_def(session, field_id)
+    if "key" in body and str(body["key"]).strip() != definition.key:
+        # 改 key 等于让历史数据失去归属：extra 里存的是旧 key
+        raise ApiError(
+            INVALID_VALUE,
+            "字段标识不能改（数据是按它存的）。可以改名称，或删掉这个字段再新建一个。",
+            detail={"field": "key"},
+        )
+    if "type" in body:
+        body = {**body, "type": check_type(body["type"])}
+    for attr in EDITABLE_ATTRS:
+        if attr in body:
+            setattr(definition, attr, body[attr])
+    session.flush()
+    return definition
+
+
+def delete_def(session: Session, field_id: int) -> str:
+    """删字段**只删定义**：`extra` 里的值原样保留，把同名字段加回来值还在。"""
+    definition = get_def(session, field_id)
+    if definition.identity:
+        raise ApiError(
+            INVALID_VALUE,
+            f"「{definition.label}」是身份字段，不能删除（记录之间对得上全靠它）",
+            detail={"field": "key", "value": definition.key},
+        )
+    key = definition.key
+    session.delete(definition)
+    session.flush()
+    return key

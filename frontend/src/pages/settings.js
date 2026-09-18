@@ -82,7 +82,12 @@ export const settingsPage = {
         <div class="board-head"><span class="board-title">这个班现在有多少数据</span></div>
         ${
           rows.length
-            ? `<div class="muted">${rows.map((item) => `${esc(item.table)} ${item.rows}`).join(' · ')}</div>`
+            ? `<div class="muted">${rows
+                .map(
+                  (item) =>
+                    `${esc(item.title)} ${item.rows}${item.kept ? '（保留，不清）' : ''}`,
+                )
+                .join(' · ')}</div>`
             : '<div class="muted">还是空的</div>'
         }
       </div>
@@ -92,7 +97,9 @@ export const settingsPage = {
           <span class="muted">不可撤销</span></div>
         <div class="muted">会清掉这个班的全部业务记录（学生档案、考勤、成绩、沟通留档…），
           <strong>保留班级本身与字段定义</strong>。照片与录音<strong>不动</strong> ——
-          要清它们去「存储与清理」，那里能按日期、按学生清。</div>
+          要清它们去「存储与清理」，那里能按日期、按学生清。
+          跨班共享的数据（话术模板、课程本身）也<strong>不动</strong> ——
+          只清这个班的那一份，别的班还在用。</div>
         <div class="toolbar" style="margin:10px 0 0">
           <button class="btn btn-danger" type="button" data-clear>清空这个班的数据…</button>
         </div>
@@ -127,12 +134,24 @@ export const settingsPage = {
 
 function openClearDialog(data, onDone) {
   const rows = data.tableCounts.filter((item) => item.rows > 0);
+  const removed = rows.filter((item) => !item.kept);
+  const kept = rows.filter((item) => item.kept);
   openModal({
     title: '清空这个班的数据',
     body: `<div class="archive-alert danger">
         这是<strong>不可撤销</strong>的操作。请先看清会删掉什么：
       </div>
-      <div class="muted">${rows.map((item) => `${esc(item.table)} ${item.rows}`).join(' · ') || '（本来就没有数据）'}</div>
+      <div class="muted">${
+        removed.map((item) => `${esc(item.title)} ${item.rows}`).join(' · ') ||
+        '（本来就没有数据）'
+      }</div>
+      ${
+        kept.length
+          ? `<div class="muted" style="margin-top:6px">保留不动：${kept
+              .map((item) => `${esc(item.title)} ${item.rows}`)
+              .join(' · ')}</div>`
+          : ''
+      }
       <div class="field" style="margin-top:12px">
         <label>要确认的话，请在下面输入「清空」两个字</label>
         <input class="input" data-confirm placeholder="清空">

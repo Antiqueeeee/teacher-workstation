@@ -123,3 +123,130 @@ def _png() -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", (50, 40), (10, 90, 150)).save(buffer, "PNG")
     return buffer.getvalue()
+
+
+# ------------------------------------------------------- 「清空一个班」的边界（阶段 5 评审 M1）
+
+
+def _second_class(session, grade: str = "高二", class_no: str = "(4)班") -> Class:
+    row = Class(grade=grade, class_no=class_no, name="")
+    session.add(row)
+    session.commit()
+    return row
+
+
+def _count(session, model) -> int:
+    from sqlalchemy import func
+
+    return session.scalar(select(func.count()).select_from(model)) or 0
+
+
+def test_clear_one_class_does_not_touch_another_classes_children(client, db_session):
+    """清空 A 班**不能**动 B 班的数据 —— 尤其是那些没有 `class_id` 的子表。
+
+    这些子表的行只能靠父表判断归属：早先「没有 class_id 就整表 DELETE」的写法
+    会把 B 班的未交名单、考试科目、调解参与人一起删光，而界面上完全看不出来。
+    """
+    from app.models.classroom import DutyGroup, DutyMember
+    from app.models.communication import Conflict, ConflictParty
+    from app.models.exam import ExamSubject
+    from app.models.homework import HomeworkUnsubmitted
+
+    class_a = _class_id(db_session)
+    class_b = _second_class(db_session).id
+    student_a = _student(db_session, "甲班学生", "S9101")
+    student_b = Student(class_id=class_b, name="乙班学生", sno="S9102", extra={})
+    db_session.add(student_b)
+    db_session.commit()
+
+    # A 班各来一条（会被清掉），B 班各来一条（必须留下）
+    for class_id, student, tag in ((class_a, student_a, "甲"), (class_b, student_b, "乙")):
+        client.post(
+            "/api/v1/homework",
+            json={
+                "date": "2026-09-10",
+                "subject": "数学",
+                "content": f"{tag}班作业",
+                "unsubmitted_names": student.name,
+            },
+            params={"classId": class_id},
+        )
+        client.post(
+            "/api/v1/exams",
+            json={"name": f"{tag}班月考", "date": "2026-09-12", "kind": "月考"},
+            params={"classId": class_id},
+        )
+        client.post(
+            "/api/v1/conflicts",
+            json={
+                "date": "2026-09-11",
+                "parties_text": student.name,
+                "reason": "借还物品纠纷",
+                "detail": "x",
+                "process": "y",
+            },
+            params={"classId": class_id},
+        )
+        client.post(
+            "/api/v1/duty_groups",
+            json={"weekday": "星期一", "area": "教室地面", "members_text": student.name},
+            params={"classId": class_id},
+        )
+
+    assert _count(db_session, HomeworkUnsubmitted) == 2
+    assert _count(db_session, ConflictParty) == 2
+    assert _count(db_session, DutyMember) == 2
+    assert _count(db_session, ExamSubject) > 1
+
+    # 只清 A 班
+    client.post("/api/v1/settings/clear", json={"confirm": "清空"}, params={"classId": class_a})
+
+    remaining_homework = db_session.scalars(select(HomeworkUnsubmitted)).all()
+    remaining_parties = db_session.scalars(select(ConflictParty)).all()
+    remaining_members = db_session.scalars(select(DutyMember)).all()
+    assert [row.student_name for row in remaining_homework] == ["乙班学生"]
+    assert [row.student_name for row in remaining_parties] == ["乙班学生"]
+    assert [row.student_name for row in remaining_members] == ["乙班学生"]
+    # B 班的考试科目还在，否则那场考试的成绩一条都进不了统计
+    exams_b = client.get("/api/v1/exams", params={"classId": class_b}).json()["data"]
+    assert exams_b and exams_b[0]["name"] == "乙班月考"
+    subjects = client.get(f"/api/v1/exams/{exams_b[0]['id']}/sheet").json()["data"]
+    assert subjects["subjects"] or subjects.get("rows") is not None
+    db_session.expire_all()
+    assert _count(db_session, Conflict) == 1
+    assert _count(db_session, DutyGroup) == 1
+
+
+def test_clear_keeps_shared_tables_and_says_so(client, db_session):
+    """跨班共享的表（话术模板、课程本身）不在清理范围内，而且**要在界面上说明**。"""
+    class_id = _class_id(db_session)
+    _student(db_session, "共享表甲", "S9103")
+    client.post(
+        "/api/v1/templates",
+        json={"title": "期末寄语", "content": "继续加油"},
+        params={"classId": class_id},
+    )
+    client.post("/api/v1/courses", json={"name": "数学", "subject": "数学"})
+
+    view = client.get("/api/v1/settings", params={"classId": class_id}).json()["data"]
+    counts = {item["table"]: item for item in view["tableCounts"]}
+    assert counts["templates"]["kept"] is True
+    assert counts["courses"]["kept"] is True
+    # 表名给中文（旧版把 homework_unsubmitted 这种英文名直接摆给老师看）
+    assert counts["templates"]["title"] == "话术模板库"
+    assert counts["homework"]["title"] == "作业情况"
+
+    client.post("/api/v1/settings/clear", json={"confirm": "清空"}, params={"classId": class_id})
+    assert client.get("/api/v1/templates").json()["meta"]["total"] == 1
+    assert client.get("/api/v1/courses").json()["meta"]["total"] == 1
+    assert client.get("/api/v1/students", params={"classId": class_id}).json()["meta"]["total"] == 0
+
+
+def test_every_table_has_a_clear_rule():
+    """每张表都要有明确的处置规则（班级范围 / 子表带父表 / 共享保留）—— **不许有空档**。
+
+    漏一个的后果是「清空 A 班」把 B 班或全班共享的数据一起删掉，而且不会报错。
+    """
+    from app.services.settings_service import unclassified_tables
+
+    assert unclassified_tables() == set()

@@ -392,3 +392,68 @@ def test_dashboard_discipline_breakdown_and_monthly(client, db_session):
     assert data["months"][-1] == today[:7]
     assert data["monthly"]["talks"][-1] == 1
     assert data["monthly"]["contacts"][-1] == 0
+
+
+def test_followup_card_count_matches_the_list(client, db_session):
+    """首页卡片的「待再次联系」条数与跟进清单**用同一个窗口**（阶段 5 评审）。
+
+    早先卡片不带时间窗、清单带 30 天窗，于是「卡片说 3 件、点开只有 1 件」——
+    同一概念两处各筛一遍的典型症状。窗口外的那条两边都不算。
+    """
+    class_id = _class_id(db_session)
+    student = _student(db_session, "跟进口径甲", "H9101")
+    for offset in (1, 3):
+        client.post(
+            "/api/v1/contacts",
+            json={
+                "date": (date.today() - timedelta(days=offset)).isoformat(),
+                "student_name": student.name,
+                "needs_follow_up": True,
+            },
+            params={"classId": class_id},
+        )
+    # 窗口外的那条（60 天前）：卡片与清单都不该算
+    client.post(
+        "/api/v1/contacts",
+        json={
+            "date": (date.today() - timedelta(days=60)).isoformat(),
+            "student_name": student.name,
+            "needs_follow_up": True,
+        },
+        params={"classId": class_id},
+    )
+
+    overview = _overview(client, class_id)
+    listed = [item for item in _followups(client, class_id) if item["kind"] == "contact_follow_up"]
+    assert overview["contacts"]["followUp"] == 2
+    assert len(listed) == 2
+
+    # 清掉一条（标成不用再跟）：两边同时减到 1
+    pending = client.get(
+        "/api/v1/contacts", params={"classId": class_id, "filter.needs_follow_up": True}
+    ).json()["data"]
+    client.patch(f"/api/v1/contacts/{pending[0]['id']}", json={"needs_follow_up": False})
+    assert _overview(client, class_id)["contacts"]["followUp"] == 1
+    assert (
+        len([item for item in _followups(client, class_id) if item["kind"] == "contact_follow_up"])
+        == 1
+    )
+
+
+def test_followups_same_weight_show_the_most_recent_first(client, db_session):
+    """同权重的按日期倒序（最近发生的先看）—— 注释早先这么写，代码却是升序。"""
+    class_id = _class_id(db_session)
+    for index, offset in enumerate((5, 2), start=1):
+        client.post(
+            "/api/v1/todos",
+            json={
+                "content": f"到期待办{index}",
+                "due_date": (date.today() - timedelta(days=offset)).isoformat(),
+            },
+            params={"classId": class_id},
+        )
+    todos = [item for item in _followups(client, class_id) if item["kind"] == "todo_due"]
+    assert [item["date"] for item in todos] == [
+        (date.today() - timedelta(days=2)).isoformat(),
+        (date.today() - timedelta(days=5)).isoformat(),
+    ]

@@ -167,9 +167,14 @@ def list_all(
     return sorted(rows, key=lambda item: (item.created_at, item.id), reverse=True)
 
 
-def get_media(session: Session, media_id: int) -> Media:
+def get_media(session: Session, media_id: int, *, include_deleted: bool = False) -> Media:
+    """取一条附件记录。默认只认未删除的。
+
+    `include_deleted=True` 给「从回收站恢复」用 —— 它要找的**正是**那条已删除的记录
+    （这里的 deleted_at 是软删除标记，不代表文件没了）。
+    """
     media = session.get(Media, media_id)
-    if media is None or media.deleted_at is not None:
+    if media is None or (media.deleted_at is not None and not include_deleted):
         raise ApiError(NOT_FOUND, "这个附件不存在，可能已被删除", status=404, detail={"id": media_id})
     return media
 

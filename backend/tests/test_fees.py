@@ -184,3 +184,44 @@ def test_records_and_ledger_default_the_date_to_today(client, db_session):
     assert record["date"] == date.today().isoformat()
     assert ledger["date"] == date.today().isoformat()
     assert ledger["kind"] == "收入"  # 默认方向
+
+
+def test_create_records_for_students_without_records(client, db_session):
+    """收班费的起点：给还没建记录的学生各建一条应缴记录（应缴按当时标准存快照）。
+
+    阶段 5 评审 M5：缴费与流水两张表原先在界面上**没有入口**，
+    于是催缴名单、漏收名单永远是空的 —— 这条接口是那个入口的后端。
+    """
+    class_id = _class_id(db_session)
+    for index, name in enumerate(("收费甲", "收费乙", "收费丙"), start=1):
+        _student(db_session, name, f"F910{index}")
+    category = _category(client, class_id, amount="30")
+
+    created = client.post(f"/api/v1/fees/categories/{category['id']}/records").json()["data"]
+    assert created["created"] == 3
+    assert created["studentNames"] == ["收费甲", "收费乙", "收费丙"]
+
+    records = client.get(
+        "/api/v1/fee_records", params={"classId": class_id, "filter.category_id": category["id"]}
+    ).json()["data"]
+    assert len(records) == 3
+    assert all(row["should_pay_cents"] == 3000 and row["paid_cents"] == 0 for row in records)
+    assert all(row["status"] == "未缴" for row in records)
+
+    # 再点一次不会翻倍（只给还没有记录的人建）
+    again = client.post(f"/api/v1/fees/categories/{category['id']}/records").json()["data"]
+    assert again["created"] == 0
+
+    # 指定姓名：认不出的整批不建
+    bad = client.post(
+        f"/api/v1/fees/categories/{category['id']}/records", json={"names": "收费甲、查无此人"}
+    )
+    assert bad.status_code == 400
+    assert "查无此人" in bad.json()["error"]["message"]
+
+    # 改了标准不影响已经建好的记录（应缴是收钱那一刻的约定）
+    client.put(f"/api/v1/fees/categories/{category['id']}/amount", json={"amountCents": 5000})
+    records = client.get(
+        "/api/v1/fee_records", params={"classId": class_id, "filter.category_id": category["id"]}
+    ).json()["data"]
+    assert all(row["should_pay_cents"] == 3000 for row in records)

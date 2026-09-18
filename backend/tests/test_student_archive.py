@@ -286,3 +286,74 @@ def test_comment_draft_of_a_student_without_records(client, db_session):
     assert "空" not in draft["draft"][:3]
     # emptyDimensions 是**标签列表**（哪几段没有数据），不是维度对象
     assert isinstance(draft["emptyDimensions"], list) and draft["emptyDimensions"]
+
+
+def test_archive_survives_a_multi_year_attendance_span(client, db_session):
+    """考勤跨度两个学年时，档案与评语照样打得开（阶段 5 评审 M2）。
+
+    考勤只记异常，所以「最早一条」与「最晚一条」之间可能空着大半年 ——
+    早先按 min/max 日期去调区间小结，会撞上「一次最多统计 400 天」的护栏，
+    于是用了两年的老师，一生一档与评语草稿整个变成 400。
+    """
+    class_id = _class_id(db_session)
+    student = _student(db_session, "长跨度甲", "A9021")
+    client.post(
+        "/api/v1/attendance",
+        json={"date": "2025-02-01", "student_name": student.name, "type": "病假"},
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/attendance",
+        json={"date": "2026-09-01", "student_name": student.name, "type": "事假"},
+        params={"classId": class_id},
+    )
+
+    response = client.get(f"/api/v1/students/{student.id}/archive")
+    assert response.status_code == 200, response.text
+    attendance = response.json()["data"]["attendance"]
+    # 分母是**这个班登记过考勤的天数**（2 天），缺席 2 天 → 0%
+    assert attendance["registeredDays"] == 2
+    assert attendance["absenceDays"] == 2
+    assert attendance["rate"] == 0
+    assert client.get(f"/api/v1/students/{student.id}/comment-draft").status_code == 200
+
+
+def test_archive_ignores_soft_deleted_records(client, db_session):
+    """档案上的数要与各页**同一口径**：软删除的记录不算（阶段 5 评审 M3）。
+
+    这几处早先都少了 `deleted_at is null` —— 同一条记录删掉后，列表页说没有了，
+    档案里还数着。
+    """
+    class_id = _class_id(db_session)
+    student = _student(db_session, "软删档案甲", "A9022")
+    contact = client.post(
+        "/api/v1/contacts",
+        json={"student_name": student.name, "needs_follow_up": True},
+        params={"classId": class_id},
+    ).json()["data"]
+    discipline = client.post(
+        "/api/v1/disciplines",
+        json={"student_name": student.name, "date": "2026-09-10", "type": "课堂纪律", "detail": "x"},
+        params={"classId": class_id},
+    ).json()["data"]
+    talk = client.post(
+        "/api/v1/talks",
+        json={"student_name": student.name, "reason": "谈心", "content": "x"},
+        params={"classId": class_id},
+    ).json()["data"]
+
+    before = _archive(client, student.id)
+    assert before["contacts"]["total"] == 1 and before["contacts"]["followUp"] == 1
+    assert before["discipline"]["total"] == 1
+    assert before["talks"]["total"] == 1
+
+    for table, row_id in (("contacts", contact["id"]), ("disciplines", discipline["id"]), ("talks", talk["id"])):
+        assert client.delete(f"/api/v1/{table}/{row_id}").status_code == 200
+
+    after = _archive(client, student.id)
+    assert after["contacts"] == {"total": 0, "followUp": 0, "recent": []}
+    assert after["discipline"]["total"] == 0 and after["discipline"]["open"] == 0
+    assert after["talks"]["total"] == 0
+    # 与列表接口同一口径：列表说 0 条，档案也必须是 0 条
+    assert client.get("/api/v1/contacts", params={"classId": class_id}).json()["meta"]["total"] == 0
+    assert client.get("/api/v1/disciplines", params={"classId": class_id}).json()["meta"]["total"] == 0

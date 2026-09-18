@@ -9,7 +9,8 @@
 import { api } from '../core/api.js';
 import { esc } from '../core/dom.js';
 import { errorCard } from '../core/errors.js';
-import { store } from '../core/store.js';
+import { getSpec, store } from '../core/store.js';
+import { openForm } from './form.js';
 import { closeModal, openModal, toast } from './ui.js';
 
 const yuan = (cents) => `${(Number(cents || 0) / 100).toFixed(2)}`;
@@ -101,9 +102,23 @@ function openDetail(detail, ctx) {
         detail.missing.length
           ? `<div class="archive-section"><div class="archive-section-head"><strong>还没建缴费记录的学生</strong>
                <span class="muted">${detail.missing.length} 人</span></div>
-              <div class="muted">${esc(detail.missing.join('、'))}</div></div>`
+              <div class="muted">${esc(detail.missing.join('、'))}</div>
+              <div class="toolbar" style="margin:8px 0 0">
+                <button class="btn btn-sm btn-primary" type="button" data-add-records>
+                  给这 ${detail.missing.length} 人各建一条（应缴 ${yuan(detail.amountCents)} 元）</button>
+              </div>
+            </div>`
           : ''
       }
+      <div class="archive-section"><div class="archive-section-head"><strong>登记实缴</strong>
+        <span class="muted">谁交了多少</span></div>
+        <div class="toolbar" style="margin:0">
+          <button class="btn btn-sm btn-primary" type="button" data-add-record>记一笔缴费</button>
+          <button class="btn btn-sm" type="button" data-import-records>批量导入（Excel）</button>
+        </div>
+        <div class="muted">给还没建记录的学生建应缴记录用上面那个按钮；
+          一次登记全班的实缴，用「缴费记录」页的导入更快。</div>
+      </div>
       <div class="archive-section"><div class="archive-section-head"><strong>改每人应缴标准</strong></div>
         <div class="toolbar" style="margin:0">
           <input class="input" type="number" step="0.01" min="0" style="width:120px"
@@ -117,6 +132,37 @@ function openDetail(detail, ctx) {
     footer: '<button class="btn" type="button" data-cancel>关闭</button>',
     onMount(root) {
       root.querySelector('[data-cancel]').addEventListener('click', closeModal);
+      const addRecords = root.querySelector('[data-add-records]');
+      if (addRecords) {
+        addRecords.addEventListener('click', async () => {
+          addRecords.disabled = true;
+          try {
+            const result = await api.feeCreateRecords(detail.categoryId);
+            toast(`已建 ${result.created} 条应缴记录（每人 ${yuan(detail.amountCents)} 元）`);
+            closeModal();
+            ctx.refresh();
+          } catch (error) {
+            addRecords.disabled = false;
+            toast(error.message, 'err', 7000);
+          }
+        });
+      }
+      root.querySelector('[data-add-record]').addEventListener('click', async () => {
+        // 走通用表单（字段、校验、落库都在后端声明里），这里只把项目与应缴预填好
+        const saved = await openForm(getSpec('fee_records'), {
+          category_id: detail.categoryId,
+          should_pay_cents: detail.amountCents / 100,
+        });
+        if (saved) {
+          closeModal();
+          ctx.refresh();
+        }
+      });
+      root.querySelector('[data-import-records]').addEventListener('click', () => {
+        closeModal();
+        window.location.hash = 'fee_records';
+        toast('在「缴费记录」页点「导入」即可');
+      });
       root.querySelector('[data-save-amount]').addEventListener('click', async () => {
         const amountCents = Math.round(Number(root.querySelector('[data-amount]').value || 0) * 100);
         try {

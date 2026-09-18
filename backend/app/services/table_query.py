@@ -111,3 +111,13 @@ def build_list_query(spec: TableSpec, session: Session, params: Any) -> ListQuer
         as_optional_int(params.get("pageSize"), "pageSize"),
     )
     return ListQuery(stmt=stmt, page=page, page_size=page_size)
+
+
+def export_rows(session: Session, spec: TableSpec, params: Any, limit: int) -> list:
+    """导出要的行 —— 与列表**同一套条件与排序**（`build_list_query`），只是不分页。
+
+    放在这里而不是接口层：接口层只管把行渲染成 Excel，取数（含筛选规则）属于服务层
+    （`CONTRIBUTING` §2；阶段 5 评审实测抓到过 `api/` 层自己跑查询）。
+    """
+    query = build_list_query(spec, session, params)
+    return list(session.scalars(query.stmt.limit(limit)))
