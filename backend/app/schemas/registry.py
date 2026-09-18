@@ -16,6 +16,7 @@ from typing import Any
 from app.db.base import Base
 from app.models.guardian import ROLES as GUARDIAN_ROLES
 from app.models.guardian import Guardian
+from app.models.homework import QUALITIES, RATE_MODES, SUBJECTS, Homework
 from app.models.rule import CATEGORIES as RULE_CATEGORIES
 from app.models.rule import Rule
 from app.models.template import CATEGORIES as TEMPLATE_CATEGORIES
@@ -23,6 +24,7 @@ from app.models.template import TONES as TEMPLATE_TONES
 from app.models.template import Template
 from app.models.todo import PRIORITIES, Todo
 from app.services.guardian_service import link_student
+from app.services.homework_service import apply_homework
 
 # 字段类型（与前端 field 渲染器一一对应）
 FIELD_TYPES = ("text", "number", "textarea", "select", "checkbox", "date")
@@ -200,6 +202,55 @@ TEMPLATE = TableSpec(
     dedupe_keys=("title",),  # 同标题视为同一条模板
 )
 
+HOMEWORK = TableSpec(
+    key="homework",
+    model=Homework,
+    title="作业情况",
+    entity="作业",
+    columns=(
+        ColumnSpec("date", "布置日期", w="104px", numeric=True),
+        ColumnSpec("subject", "科目", w="70px"),
+        ColumnSpec("content", "作业内容"),
+        ColumnSpec("total", "应交", w="62px", numeric=True),
+        ColumnSpec("unsubmitted_names", "未交名单"),
+        ColumnSpec("rate", "提交率", w="78px", numeric=True),
+        ColumnSpec("quality", "质量", w="62px"),
+    ),
+    fields=(
+        FieldSpec("date", "布置日期", type="date", required=True),
+        FieldSpec("subject", "科目", type="select", options=SUBJECTS, required=True),
+        FieldSpec("content", "作业内容", type="textarea", full=True, required=True),
+        FieldSpec("deadline", "截止时间", hint="如 次日早读前"),
+        FieldSpec("total", "应交人数", type="number", hint="留空按当前全班人数"),
+        FieldSpec(
+            "unsubmitted_names",
+            "未交名单",
+            type="textarea",
+            full=True,
+            hint="多人用顿号分隔；全部交齐填「无」。提交率由它自动算出，不用手填",
+        ),
+        FieldSpec(
+            "rate_mode",
+            "提交率模式",
+            type="select",
+            options=RATE_MODES,
+            default="自动",
+            hint="手工只用于特殊情况（如学校要求按人数上报）",
+        ),
+        FieldSpec("rate_manual", "手工提交率（%）", type="number"),
+        # 计算出来的值：不让人填（editable=False），但声明成字段，导出的文件再导回来时
+        # 这一列会被认出来并忽略，而不是报「认不出这一列」
+        FieldSpec("rate", "提交率（%）", type="number", editable=False),
+        FieldSpec("quality", "完成质量", type="select", options=QUALITIES, default="良"),
+        FieldSpec("teacher", "布置教师"),
+    ),
+    search_keys=("content", "teacher"),
+    filter_keys=("subject", "quality"),
+    default_sort=("date", -1),
+    dedupe_keys=("date", "subject", "content"),  # 同一天同一科同一份作业，重复导入不翻倍
+    before_save=apply_homework,
+)
+
 GUARDIAN = TableSpec(
     key="guardians",
     model=Guardian,
@@ -237,7 +288,9 @@ GUARDIAN = TableSpec(
     before_save=link_student,
 )
 
-TABLES: dict[str, TableSpec] = {spec.key: spec for spec in (TODO, RULE, TEMPLATE, GUARDIAN)}
+TABLES: dict[str, TableSpec] = {
+    spec.key: spec for spec in (TODO, RULE, TEMPLATE, GUARDIAN, HOMEWORK)
+}
 
 # 字段定义存在数据库里的表（学生档案）：spec 每次请求**现算**。
 # 否则老师在字段管理里加了一个字段，要重启服务才生效 —— 而他并不知道要重启。

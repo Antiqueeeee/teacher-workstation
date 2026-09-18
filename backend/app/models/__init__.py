@@ -6,6 +6,7 @@
 from app.models.app_state import AppState
 from app.models.class_ import Class
 from app.models.guardian import Guardian
+from app.models.homework import Homework, HomeworkUnsubmitted
 from app.models.rule import Rule
 from app.models.student import Student, StudentFieldDef
 from app.models.template import Template
@@ -15,6 +16,8 @@ __all__ = [
     "AppState",
     "Class",
     "Guardian",
+    "Homework",
+    "HomeworkUnsubmitted",
     "Rule",
     "Student",
     "StudentFieldDef",

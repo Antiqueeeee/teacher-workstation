@@ -18,10 +18,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.schemas.common import split_values
 from app.schemas.registry import TableSpec
 from app.services import table_io
 from app.services.field_value import apply_defaults, parse_value
+from app.services.table_write import save_validated
 
 MAX_ROWS = 2000  # 一次导入的行数上限：防止误传一个几万行的总表
 
@@ -212,24 +212,9 @@ def commit(
             skipped.append({"row": index, "reason": "库里已有同一条记录，已跳过"})
             continue
 
-        # 与新增/更新走同一个保存前钩子（例如把「学生姓名」解析成 student_id）。
+        # 走与新增/更新/批量**同一条写入管线**（钩子、JSON 分流、班级归属都在里面）。
         # 钩子抛错会让整个导入回滚，不会写进半批数据。
-        row_values = dict(values)
-        hinted_class = None
-        if spec.before_save is not None:
-            spec.before_save(row_values, session, None)
-            hinted_class = row_values.pop("class_id", None)
-
-        # JSON 列的字段单独分流（学生档案的大部分字段在 extra 里）。
-        # 与新增/更新/批量走同一个实现：分流规则只有一处，日期也会被转成 ISO 字符串
-        columns, payload = split_values(spec, row_values)
-
-        row = spec.model(**columns)
-        if payload and spec.json_column:
-            setattr(row, spec.json_column, payload)
-        if spec.class_scoped:
-            row.class_id = hinted_class if hinted_class is not None else class_id
-        session.add(row)
+        save_validated(spec, session, values, class_id=class_id)
         if key is not None:
             existing.add(key)
         created += 1

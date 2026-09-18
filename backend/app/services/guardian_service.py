@@ -25,7 +25,10 @@ def link_student(values: dict[str, Any], session: Session, row: Any = None) -> N
     if not name:
         raise ApiError(INVALID_VALUE, "必须填写学生姓名", detail={"field": "student_name"})
 
-    class_id = values.get("classId") or (getattr(row, "class_id", None) if row else None)
+    # class_id 由写入管线**在钩子之前**解析好放进 values（学生所在班级在这里带出）。
+    # 注意不能用 values.get("classId")：提交体里的保留键会被 normalize 丢掉，那样
+    # 就变成「跨班按姓名匹配」——单班时看不出问题，多班时会挂错人（踩过）
+    class_id = values.get("class_id") or (getattr(row, "class_id", None) if row else None)
     query = select(Student).where(Student.deleted_at.is_(None), Student.name == name)
     if class_id:
         query = query.where(Student.class_id == class_id)

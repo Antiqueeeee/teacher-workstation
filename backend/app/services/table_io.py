@@ -175,12 +175,13 @@ def build_template(spec: TableSpec) -> bytes:
 
 
 def build_export(spec: TableSpec, rows: Iterable[Any]) -> bytes:
-    """导出为 xlsx：列用中文字段名，日期 ISO，勾选输出「是/否」。
+    """导出为 xlsx：列用字段名，日期 ISO，勾选输出「是/否」。
 
-    输出形状与导入模板一致 —— **导出的文件改一改就能直接导回来**。
-    这对「先导出、线下批量改、再导入」这个真实用法很重要。
+    导出的列是**全部声明字段**（含 `editable=False` 的派生值，比如作业提交率）——
+    导出是一份完整记录，不该少东西；而导入侧会忽略不可编辑字段，
+    所以这些列在导回来时是「认得出、但不作为输入」，不会报错。
     """
-    fields = [field_spec for field_spec in spec.fields if field_spec.editable]
+    fields = list(spec.fields)
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = spec.title[:31]

@@ -24,12 +24,20 @@ SPEC_IDS = [spec.key for spec in SPECS]
 
 
 def columns_of(spec) -> set[str]:
-    """模型上真实存在的字段：真实列 + 声明为 JSON 存储的字段。
+    """模型上真实存在的字段：真实列 + 声明为 JSON 存储的字段 + **派生属性**。
 
-    JSON 字段（学生档案的 `extra` 内容）不是列，但同样是「存得住」的字段，
-    所以自洽检查必须把它们算进来。
+    JSON 字段（学生档案的 `extra` 内容）不是列，但同样是「存得住」的字段；
+    派生属性（如作业的未交名单、未交人数）由关系算出来，也是可输出的字段。
+    自洽检查必须把这三种都算进来，否则会把合法声明误判成错的。
     """
-    return set(spec.model.__table__.columns.keys()) | set(spec.json_fields)
+    available = set(spec.model.__table__.columns.keys()) | set(spec.json_fields)
+    # 注意是 spec.model.__mro__（类自身的继承链）；
+    # 写成 type(spec.model).__mro__ 会拿到**元类**的 MRO，什么都找不到（踩过）
+    for klass in spec.model.__mro__:
+        for name, attribute in vars(klass).items():
+            if isinstance(attribute, property):
+                available.add(name)
+    return available
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=SPEC_IDS)
