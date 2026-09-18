@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.db.engine import get_session
 from app.schemas.registry import get_spec
 from app.services.class_scope import resolve_class_id
+from app.services.comment_service import comment_draft
 from app.services.student_service import archive, identity_conflicts
 
 router = APIRouter(prefix="/students", tags=["学生档案"])
@@ -30,6 +31,15 @@ router = APIRouter(prefix="/students", tags=["学生档案"])
 def student_archive(student_id: int, session: Session = Depends(get_session)):
     """一生一档：一个学生在这套系统里的全部痕迹（各段的数都从所属模块的口径服务取）。"""
     return {"ok": True, "data": archive(session, student_id)}
+
+
+@router.get("/{student_id}/comment-draft")
+def student_comment_draft(student_id: int, session: Session = Depends(get_session)):
+    """评语草稿：结构化维度 + 可直接编辑的文本（末尾固定「请人工复核」）。
+
+    用 GET 而不是 POST：它只读、不改任何东西（文档里写的是 POST，但那是排版时的猜测）。
+    """
+    return {"ok": True, "data": comment_draft(session, student_id)}
 
 
 @router.get("/name-conflicts")

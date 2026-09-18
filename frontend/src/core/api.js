@@ -174,6 +174,9 @@ export const api = {
   /** 学生一生一档：后端聚合的全部痕迹（各段的数都从所属模块的口径服务取）。 */
   studentArchive: (studentId) => request(`/students/${studentId}/archive`).then((p) => p.data),
 
+  /** 评语草稿：结构化维度 + 可编辑文本（末尾固定「请人工复核」）。 */
+  commentDraft: (studentId) => request(`/students/${studentId}/comment-draft`).then((p) => p.data),
+
   /** 学生档案：同名/同学号冲突报告（学生档案页面顶部据此提示）。 */
   studentConflicts: (classId) =>
     request('/students/name-conflicts', { params: { classId } }).then((p) => p.data),

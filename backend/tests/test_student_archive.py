@@ -222,3 +222,67 @@ def test_archive_attendance_rate_uses_the_class_window(client, db_session):
     assert archive["attendance"]["registeredDays"] == 2  # 9-01 与 9-02
     assert archive["attendance"]["absenceDays"] == 1
     assert archive["attendance"]["rate"] == 50  # (2 − 1) / 2，而不是 0%
+
+
+# ---------- 评语草稿 ----------
+
+
+def test_comment_draft_is_built_from_records(client, db_session):
+    """草稿由记录拼出来：写了出勤/作业/纪律/沟通的各段，并固定带「请人工复核」。"""
+    class_id = _class_id(db_session)
+    student = _student(db_session, "评语学生甲", "A9011")
+    today = date.today().isoformat()
+
+    client.post(
+        "/api/v1/attendance",
+        json={"date": today, "student_name": student.name, "type": "事假"},
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/homework",
+        json={"date": today, "subject": "数学", "content": "评语作业", "total": 2, "unsubmitted_names": student.name},
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/talks",
+        json={"student_name": student.name, "type": "学业指导", "reason": "x", "content": "y"},
+        params={"classId": class_id},
+    )
+
+    draft = client.get(f"/api/v1/students/{student.id}/comment-draft").json()["data"]
+    assert draft["studentName"] == "评语学生甲"
+    assert "缺席 1 天" in draft["draft"]
+    assert "欠交 1 次" in draft["draft"]
+    assert "个别谈话 1 次" in draft["draft"]
+    assert "请人工复核" in draft["review"]
+    labels = [item["label"] for item in draft["dimensions"]]
+    assert labels[0] == "学业"  # 学业放第一段
+    assert "作业" in labels
+
+
+def test_comment_draft_keeps_health_out_of_the_text(client, db_session):
+    """特殊体质**不进评语正文** —— 那是隐私；只给老师一句提醒并说明别写进去。"""
+    class_id = _class_id(db_session)
+    student = _student(db_session, "评语学生乙", "A9012")
+    client.post(
+        "/api/v1/health_records",
+        json={"student_name": student.name, "type": "癫痫", "detail": "x", "emergency": "y"},
+        params={"classId": class_id},
+    )
+
+    draft = client.get(f"/api/v1/students/{student.id}/comment-draft").json()["data"]
+    assert "癫痫" not in draft["draft"]  # 正文里不出现
+    health_dim = [item for item in draft["dimensions"] if item["key"] == "health"][0]
+    assert health_dim["teacherOnly"] is True
+    assert "不必写" in health_dim["text"]
+
+
+def test_comment_draft_of_a_student_without_records(client, db_session):
+    """一条记录都没有的学生：草稿要说明「没有特别的数据记录」，而不是空白。"""
+    class_id = _class_id(db_session)
+    student = _student(db_session, "评语学生丙", "A9013")
+    draft = client.get(f"/api/v1/students/{student.id}/comment-draft").json()["data"]
+    assert draft["draft"]
+    assert "空" not in draft["draft"][:3]
+    # emptyDimensions 是**标签列表**（哪几段没有数据），不是维度对象
+    assert isinstance(draft["emptyDimensions"], list) and draft["emptyDimensions"]

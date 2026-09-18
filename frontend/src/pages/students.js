@@ -11,6 +11,7 @@
  */
 
 import { openStudentArchive } from '../components/student-archive.js';
+import { openCommentDraft } from '../components/comment-draft.js';
 import { api } from '../core/api.js';
 import { esc } from '../core/dom.js';
 import { store } from '../core/store.js';
@@ -64,6 +65,13 @@ export const studentsPageDef = {
       label: '档案',
       async run(row) {
         await openStudentArchive(row);
+      },
+    },
+    {
+      name: 'comment',
+      label: '评语',
+      async run(row) {
+        await openCommentDraft(row);
       },
     },
   ],
