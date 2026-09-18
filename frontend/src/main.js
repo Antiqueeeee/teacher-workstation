@@ -22,7 +22,13 @@ import { cadresPageDef } from './pages/cadres.js';
 import { activitiesPageDef } from './pages/class_activities.js';
 import { eventsPageDef } from './pages/class_events.js';
 import { conflictsPageDef } from './pages/conflicts.js';
+import { courseClassesPageDef } from './pages/course_classes.js';
+import { courseScoresPageDef } from './pages/course_scores.js';
+import { courseStudentsPageDef } from './pages/course_students.js';
+import { coursesPageDef } from './pages/courses.js';
 import { dormsPageDef } from './pages/dorms.js';
+import { feeLedgerPageDef } from './pages/fee_ledger.js';
+import { feeRecordsPageDef } from './pages/fee_records.js';
 import { feesPageDef } from './pages/fees.js';
 import { dutyGroupsPageDef } from './pages/duty_groups.js';
 import { grantsPageDef } from './pages/grants.js';
@@ -66,10 +72,16 @@ const PAGE_DEFS = [
   youthMembersPageDef,
   dutyGroupsPageDef,
   feesPageDef,
+  feeRecordsPageDef,
+  feeLedgerPageDef,
   attendancePageDef,
   homeworkPageDef,
   schedulePageDef,
   scoresPageDef,
+  coursesPageDef,
+  courseClassesPageDef,
+  courseStudentsPageDef,
+  courseScoresPageDef,
   dormsPageDef,
   dormDutyPageDef,
   seatsPageDef,

@@ -17,6 +17,7 @@ from app.models.communication import (
     Visit,
 )
 from app.models.contact import ContactLog
+from app.models.course import Course, CourseClass, CourseScore, CourseStudent
 from app.models.dorm import DormBed, DormDuty, DormRoom
 from app.models.discipline import Discipline
 from app.models.exam import Exam, ExamSubject, Score
@@ -39,6 +40,10 @@ __all__ = [
     "Cadre",
     "ContactLog",
     "Countdown",
+    "Course",
+    "CourseClass",
+    "CourseScore",
+    "CourseStudent",
     "Visit",
     "Talk",
     "Meeting",

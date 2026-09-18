@@ -403,3 +403,81 @@
 .hbar-track { flex: 1; height: 12px; border-radius: 6px; background: var(--ink-100); overflow: hidden; }
 .hbar-fill { display: block; height: 100%; border-radius: 6px; }
 .hbar-value { flex: 0 0 56px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-600); }
+/* ============================================================
+   学科与成绩（课程看板 / 课程详情 / 学期成绩）
+   旧应用对应 blocks：.course-grid .course-card .class-grid .class-card
+   .exam-block .growth-grid .growth-card —— 结构照旧，配色走同一套令牌。
+   ============================================================ */
+
+.tabs {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  margin: 10px 0 12px; border-bottom: 1px solid var(--border);
+}
+.tab {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  padding: 9px 14px; min-height: var(--tap); font: inherit; font-size: 13.5px;
+  color: var(--ink-500); border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--ice-700); }
+.tab.on { color: var(--ice-700); font-weight: 700; border-bottom-color: var(--ice-500); }
+.tab-body { min-height: 40px; }
+
+.sec-title { display: flex; align-items: baseline; gap: 8px; margin: 16px 0 10px; }
+.sec-title h3 { margin: 0; font-size: 14.5px; color: var(--ink-800); }
+.sec-title > span:last-child { font-size: 12px; color: var(--ink-400); }
+.sec-title .bar { width: 3px; height: 14px; border-radius: 2px; background: var(--ice-500); }
+
+/* ---------- 课程卡 ---------- */
+.course-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.course-card {
+  display: grid; gap: 6px; padding: 13px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+}
+.course-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.course-card-head strong { font-size: 15px; color: var(--ink-800); }
+.course-card-head .badge { margin-left: auto; }
+.course-card-nums { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-600); }
+
+/* ---------- 课程详情里的班级块 ---------- */
+.course-class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.course-class-card {
+  display: grid; gap: 6px; padding: 13px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+}
+.ccc-head { display: flex; align-items: center; gap: 8px; }
+.ccc-head strong { font-size: 14.5px; color: var(--ink-800); }
+.ccc-head .badge { margin-left: auto; }
+
+.course-roster { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 4px 3px 9px; border-radius: 999px; font-size: 12.5px;
+  background: var(--ice-50); border: 1px solid var(--ice-200); color: var(--ink-700);
+}
+.chip i { font-style: normal; font-size: 11px; }
+.chip-x {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  width: 22px; height: 22px; border-radius: 999px; line-height: 1;
+  color: var(--ink-400); font-size: 15px;
+}
+.chip-x:hover { background: var(--rose-100); color: var(--rose-600); }
+
+/* ---------- 一场考试 ---------- */
+.exam-block { margin-bottom: 18px; }
+.exam-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.exam-head strong { font-size: 14.5px; color: var(--ink-800); }
+.exam-head .btn { margin-left: auto; }
+.exam-block .notice { margin: 6px 0 8px; }
+.exam-block .table-wrap { border: 1px solid var(--border); border-radius: var(--r); }
+
+/* ---------- 成绩生长曲线 ---------- */
+.growth-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.growth-card {
+  padding: 10px 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow-sm);
+}
+.growth-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.growth-head strong { font-size: 13.5px; color: var(--ink-800); }
+.growth-head .muted { margin-left: auto; font-size: 11.5px; }

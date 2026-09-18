@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import INVALID_VALUE, ApiError
 from app.models.homework import HomeworkUnsubmitted, compute_rate
+from app.services.course_service import find_course
 from app.services.roster import count_class_students, resolve_names, split_names
 
 
@@ -39,6 +40,12 @@ def apply_homework(values: dict[str, Any], session: Session, row: Any = None) ->
     # 名单是子表关系，不是列：从 values 里摘出来（normalize 只是按声明校验过它）
     text = values.pop("unsubmitted_names", None)
     class_id = values.get("class_id") or getattr(row, "class_id", None)
+
+    # 「所属课程」也是虚拟输入字段（填课程名）—— 摘掉它并换成 course_id，
+    # 与课程模块共用同一个 find_course（查不到/重名都不猜）
+    if "course_name" in values:
+        name = str(values.pop("course_name") or "").strip()
+        values["course_id"] = find_course(session, name).id if name else None
 
     if values.get("total") in (None, ""):
         if row is None:

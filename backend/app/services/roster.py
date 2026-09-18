@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -102,6 +102,7 @@ def find_student(
     name: str = "",
     sno: str = "",
     class_id: int | None = None,
+    class_ids: Sequence[int] | None = None,
     label: str = "学生",
 ) -> tuple[Student | None, str | None, str | None]:
     """按姓名（优先）或学号找一个学生。返回 `(学生, 一句问题)`。
@@ -111,6 +112,9 @@ def find_student(
     这条规则原先在监护人、出勤、宿舍三处各写了一遍（第四处「沟通留档」马上要写），
     现在只有这一份：同一条「怎么把人找出来」的规矩在多处实现，迟早分叉，
     而分叉的表现是「同一个名字在这页能录进去、在那页认不出来」。
+
+    `class_ids` 用于**跨班**的场景（课程模块：一门课教几个班，学生可能在其中任何一个班里）：
+    只在给定的这几个班里找人，重名才算重名。传了 `class_id` 就按它找（单班）。
 
     返回 `(学生, 问题, 问题类型)`，第三项是 `"missing"` / `"ambiguous"` / `"empty"`
     —— 调用方要按类型给场景化提示时，**别去匹配提示词里的字**（改一次文案就静默失效）。
@@ -123,6 +127,11 @@ def find_student(
     query = select(Student).where(Student.deleted_at.is_(None))
     if class_id:
         query = query.where(Student.class_id == class_id)
+    elif class_ids is not None:
+        # 空列表表示「这门课一个班都还没加」—— 那种情况下不应该在任何班里找到人
+        if not list(class_ids):
+            return None, f"学生档案里没有叫「{name}」的{label}，请先在「学生档案」里加进去", "missing"
+        query = query.where(Student.class_id.in_(list(class_ids)))
     query = query.where(Student.name == name) if name else query.where(Student.sno == sno)
     matches = list(session.scalars(query))
 

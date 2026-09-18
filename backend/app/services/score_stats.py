@@ -411,19 +411,33 @@ def build_report(session: Session, exam: Exam, *, include_previous: bool = True)
     )
 
 
-def _apply_ranks(rows: list[StudentResult]) -> None:
-    """标准竞赛排名：1, 2, 2, 4。同分并列，下一个名次跳过被占用的位次。
+def rank_of(values: list[float]) -> list[int]:
+    """按分数降序给出名次表（与输入等长）。标准竞赛排名：1, 2, 2, 4。
 
-    旧应用是 `forEach((r,i)=> r.rank = i+1)`（`:12049`）：同分的学生按数组顺序
-    拿到不同名次，同一份数据换个顺序名次就变了。
+    **全项目只有这一份排名实现** —— 考试报表（本模块 `_apply_ranks`）与课程成绩
+    （`services/course_service.py`）都用它。旧应用是 `forEach((r,i)=> r.rank = i+1)`
+    （`:12049`）：同分的学生按数组顺序拿到不同名次，同一份数据换个顺序名次就变了。
     """
-    ranked = sorted((row for row in rows if row.took_part), key=lambda row: -row.total)
+    ranks = [0] * len(values)
     rank = 0
-    previous_total: float | None = None
-    for index, row in enumerate(ranked, start=1):
-        if previous_total is None or row.total < previous_total:
-            rank = index  # 分数降了才占新名次，同分沿用上一个名次
-            previous_total = row.total
+    previous: float | None = None
+    for position, index in enumerate(sorted(range(len(values)), key=lambda i: -values[i]), start=1):
+        value = values[index]
+        if previous is None or value < previous:
+            rank = position  # 分数降了才占新名次，同分沿用上一个名次
+            previous = value
+        ranks[index] = rank
+    return ranks
+
+
+def _apply_ranks(rows: list[StudentResult]) -> None:
+    """给一场考试的每行学生结果补上名次与「是否并列」。
+
+    只给**参加了考试**的人排名次（`took_part`）—— 缺考与没录的学生不该占名次。
+    """
+    ranked = [row for row in rows if row.took_part]
+    ranks = rank_of([row.total for row in ranked])
+    for row, rank in zip(ranked, ranks):
         row.rank = rank
 
     counts: dict[int, int] = {}

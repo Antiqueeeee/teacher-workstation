@@ -69,6 +69,16 @@ class TableSpec:
     filter_keys: tuple[str, ...] = ()          # 允许 filter.<k> 精确筛选的列
     default_sort: tuple[str, int] = ("id", -1)  # (列, 方向) 方向 1=升序 -1=降序
     class_scoped: bool = True                  # 是否属于某个班级
+    # 班级**由保存钩子推出来**（不是从请求上下文猜）。
+    #
+    # 绝大多数表的 class_id 就是「当前班级」，由 `resolve_class_id` 从 classId 参数或
+    # 唯一那个班解析出来；而课程模块的班级是**从别的表推出来的** —— 一条课程名单属于
+    # 哪个班，取决于「这门课在这个班上」那条记录，与请求上下文无关。这类表声明成
+    # class_scoped=True（数据上确实属于某个班，输出里要带 class_id、也能按班筛选），
+    # 但 `resolve_class_id` 对它们**只认显式传来的 classId**，不再回退到「唯一的那个班」：
+    # 多班部署下建一条课程名单不该先报「还没有班级切换界面」，它根本不需要班级切换。
+    # 声明了它就必须真的在钩子里写 class_id：那一列是 NOT NULL，漏写会当场报错（不会静默）。
+    class_from_hook: bool = False
     soft_delete: bool = True
     dedupe_keys: tuple[str, ...] = ()          # 导入时的「判重键」：同键视为同一条记录，跳过而不是重复插入
     extra_keys: tuple[str, ...] = field(default_factory=tuple)  # 输出里额外带的列

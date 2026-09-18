@@ -176,12 +176,23 @@ export const api = {
     request('/analytics/substitute', { params: { date, classId } }).then((p) => p.data),
 
   /** 班级费用：概览与某个项目的明细（状态是推导值，只在后端算）。 */
-  feeOverview: (classId) => request('/fees/overview', { params: { classId } }).then((p) => p.data),
-  feeCategory: (categoryId) => request(`/fees/categories/${categoryId}`).then((p) => p.data),
+  feeOverview: (classId) => request('/fees/overview', { params: { classId } }).then((p) => p.data),  feeCategory: (categoryId) => request(`/fees/categories/${categoryId}`).then((p) => p.data),
   feeSetAmount: (categoryId, amountCents, backfill) =>
     request(`/fees/categories/${categoryId}/amount`, {
       method: 'PUT',
       body: { amountCents, backfill },
+    }).then((p) => p.data),
+
+  /** 学科与成绩：课程看板 / 课程详情 / 成绩分析 / 批量加名单。
+   *  得分率、及格、名次全部由后端算（按满分算，不写死 60 分）—— 界面只显示。 */
+  courseOverview: () => request('/courses/overview').then((p) => p.data),
+  courseDetail: (courseId) => request(`/courses/${courseId}/detail`).then((p) => p.data),
+  courseAnalysis: (courseId, classId) =>
+    request(`/courses/${courseId}/analysis`, { params: { classId } }).then((p) => p.data),
+  courseAddStudents: (courseId, courseClassId, names) =>
+    request(`/courses/${courseId}/students`, {
+      method: 'POST',
+      body: { courseClassId, names },
     }).then((p) => p.data),
 
   /** 学生一生一档：后端聚合的全部痕迹（各段的数都从所属模块的口径服务取）。 */

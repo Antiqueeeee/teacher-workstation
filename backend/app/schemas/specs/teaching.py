@@ -12,7 +12,6 @@ from app.schemas.table_spec import ColumnSpec, FieldSpec, TableSpec
 from app.services.attendance_service import apply_attendance
 from app.services.exam_service import apply_exam
 from app.services.homework_service import apply_homework
-
 HOMEWORK = TableSpec(
     key="homework",
     model=Homework,
@@ -35,6 +34,13 @@ HOMEWORK = TableSpec(
         FieldSpec("subject", "科目", type="select", options=SUBJECTS, required=True),
         FieldSpec("content", "作业内容", type="textarea", full=True, required=True),
         FieldSpec("deadline", "截止时间", hint="如 次日早读前"),
+        # 课程作业：填课程名就把这条作业挂到那门课上（学科与成绩页会按课程汇总）。
+        # 虚拟字段 —— 钩子把它换成 course_id，见 services/homework_service.py
+        FieldSpec(
+            "course_name",
+            "所属课程",
+            hint="任课教师布置的作业填课程名（如 数学）；班主任的常规作业留空",
+        ),
         FieldSpec("total", "应交人数", type="number", hint="留空按当前全班人数（存成快照，之后不再变）"),
         FieldSpec(
             "unsubmitted_names",
@@ -65,9 +71,13 @@ HOMEWORK = TableSpec(
         ),
         FieldSpec("quality", "完成质量", type="select", options=QUALITIES, default="良"),
         FieldSpec("teacher", "布置教师"),
+        # course_id 由钩子从「所属课程」解析出来，不让人填；声明成字段是为了
+        # 它出现在导出里、也能用 filter.course_id 精确筛选（学科与成绩页就是这么取的）
+        FieldSpec("course_id", "课程（编号）", type="number", editable=False),
     ),
     search_keys=("content", "teacher"),
-    filter_keys=("subject", "quality"),
+    filter_keys=("subject", "quality", "course_id"),
+    extra_keys=("course_name", "course_id"),
     default_sort=("date", -1),
     dedupe_keys=("date", "subject", "content"),  # 同一天同一科同一份作业，重复导入不翻倍
     before_save=apply_homework,

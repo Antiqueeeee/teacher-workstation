@@ -31,6 +31,7 @@ from app.schemas.specs.communication import (
     VISIT,
 )
 from app.schemas.specs.contact import CONTACT, GUARDIAN
+from app.schemas.specs.course import COURSE, COURSE_CLASS, COURSE_SCORE, COURSE_STUDENT
 from app.schemas.specs.fee import FEE_CATEGORY, FEE_LEDGER, FEE_RECORD
 from app.schemas.specs.schedule import COUNTDOWN, SLOT
 from app.schemas.specs.student_records import DISCIPLINE, GRANT, HEALTH
@@ -68,6 +69,10 @@ __all__ = [
     "FEE_LEDGER",
     "SLOT",
     "COUNTDOWN",
+    "COURSE",
+    "COURSE_CLASS",
+    "COURSE_STUDENT",
+    "COURSE_SCORE",
     "EVENT",
     "ACTIVITY",
     "MEETING",
@@ -112,6 +117,10 @@ TABLES: dict[str, TableSpec] = {
         FEE_LEDGER,
         SLOT,
         COUNTDOWN,
+        COURSE,
+        COURSE_CLASS,
+        COURSE_STUDENT,
+        COURSE_SCORE,
     )
 }
 

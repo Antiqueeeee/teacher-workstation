@@ -62,6 +62,12 @@ class Homework(Base, TimestampMixin, SoftDeleteMixin):
     deadline: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     quality: Mapped[str] = mapped_column(String(8), default="良", nullable=False)
     teacher: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    # 属于哪门课（可空）：班主任布置的作业没有课程，任课教师从「学科与成绩」布置的有。
+    # 旧应用把课程作业单存成 `courses[].homework[]`（第二份并行数据、提交率还是手填的），
+    # 这里合并成同一张表 —— 提交率、未交名单、名单解析因此只有一套实现
+    course_id: Mapped[int | None] = mapped_column(
+        ForeignKey("courses.id", ondelete="SET NULL"), index=True, default=None
+    )
 
     # 应交人数（创建时的快照；未填时按当时全班人数算）
     total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -77,6 +83,12 @@ class Homework(Base, TimestampMixin, SoftDeleteMixin):
         lazy="selectin",
         back_populates="homework",
     )
+    course = relationship("Course", lazy="selectin")
+
+    @property
+    def course_name(self) -> str:
+        """这次作业属于哪门课（空的表示班主任布置的常规作业）。"""
+        return self.course.name if self.course else ""
 
     @property
     def unsubmitted_names(self) -> str:

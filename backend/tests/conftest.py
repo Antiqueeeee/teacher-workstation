@@ -89,6 +89,11 @@ def clean_business_data(client):  # 依赖 client：确保表已经建好
     try:
         for table in BUSINESS_TABLES:
             session.execute(text(f"DELETE FROM {table}"))
+        # `classes` 是启动时播种的（默认班），不能整表清 —— 但**用例额外建的班必须清掉**：
+        # 留着它，后面所有「只有一个班、不用传 classId」的用例都会变成 409
+        # （多班场景的用例建了第二个班，症状却出现在别的文件里，很难查）。
+        # 外键带 CASCADE，附属数据在上面的循环里已经清过了
+        session.execute(text("DELETE FROM classes WHERE id <> (SELECT MIN(id) FROM classes)"))
         for prefix in BUSINESS_APP_STATE_KEYS:
             session.execute(
                 text("DELETE FROM app_state WHERE key LIKE :pattern"), {"pattern": f"{prefix}%"}

@@ -134,7 +134,9 @@ def prepare(
     values = normalize(spec, payload, partial=partial)
 
     if spec.class_scoped and row is None:
-        # 新建：先把班级定下来，钩子才读得到（也允许钩子改它）
+        # 新建：先把班级定下来，钩子才读得到（也允许钩子改它）。
+        # 班级由钩子推出来的表（class_from_hook）这里拿到的是 None 或显式传的 classId ——
+        # 具体规矩在 `class_scope.resolve_class_id` 里，只有那一处
         values["class_id"] = resolve_class_id(spec, class_id_raw, session)
     else:
         # 非班级范围的表 / 更新：都不接受客户端指定班级
