@@ -18,6 +18,7 @@ from app.api.v1.contacts import router as contacts_router
 from app.api.v1.crud_factory import build_router
 from app.api.v1.dorms import router as dorms_router
 from app.api.v1.exams import router as exams_router
+from app.api.v1.fees import router as fees_router
 from app.api.v1.media import router as media_router
 from app.api.v1.seats import router as seats_router
 from app.api.v1.export import router as export_router
@@ -58,6 +59,8 @@ router.include_router(dorms_router)
 router.include_router(seats_router)
 # /analytics/overview、/analytics/followups 是独立前缀，不会与表路由冲突
 router.include_router(analytics_router)
+# /fees/overview、/fees/categories/{id} 是独立前缀
+router.include_router(fees_router)
 # /youth_members/consistency 必须先于 /youth_members/{row_id}
 router.include_router(class_roles_router)
 # /contacts/follow-ups 必须先于 /contacts/{row_id}

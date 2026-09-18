@@ -20,6 +20,7 @@ from app.models.contact import ContactLog
 from app.models.dorm import DormBed, DormDuty, DormRoom
 from app.models.discipline import Discipline
 from app.models.exam import Exam, ExamSubject, Score
+from app.models.fee import FeeCategory, FeeLedger, FeeRecord
 from app.models.guardian import Guardian
 from app.models.homework import Homework, HomeworkUnsubmitted
 from app.models.media import Media
@@ -51,6 +52,9 @@ __all__ = [
     "DutyMember",
     "Exam",
     "ExamSubject",
+    "FeeCategory",
+    "FeeLedger",
+    "FeeRecord",
     "Grant",
     "Guardian",
     "HealthRecord",

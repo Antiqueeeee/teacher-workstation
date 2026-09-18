@@ -25,6 +25,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.config import DATA_DIR, MEDIA_DIR  # noqa: E402
+from app.db.base import Base  # noqa: E402
 from app.db.engine import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -50,31 +51,22 @@ def db_session(client):  # 依赖 client：确保应用已启动、迁移已跑�
         session.close()
 
 
-# 每个用例之间要清掉的**业务表**（顺序：先子表后主表，虽然外键是级联的，
-# 但显式按顺序删更好读、也不依赖 PRAGMA foreign_keys 的开启时机）。
+# 每个用例之间要清掉的**业务表** —— **从模型元数据自动取**，不手工维护清单。
 #
-# 为什么不一起清 `students` 之外的种子数据：`classes`（默认班级）、
-# `student_field_defs`（默认字段定义）、`app_state` 是应用启动时播种的，
-# 清掉它们后面的用例会找不到班级与字段。
-BUSINESS_TABLES = (
-    "media",
-    "contact_logs",
-    "scores",
-    "exam_subjects",
-    "exams",
-    "seats",
-    "seat_plans",
-    "dorm_beds",
-    "dorm_rooms",
-    "attendance",
-    "homework_unsubmitted",
-    "homework",
-    "guardians",
-    "todos",
-    "rules",
-    "templates",
-    "students",
+# 手工清单这件事我漏过三次（新加的表忘了写进去，于是上一个用例的数据漏到下一个），
+# 所以改成推导：除了启动时播种的几张表（班级、学生字段定义、应用配置），其余全清。
+SEEDED_TABLES = {"classes", "student_field_def", "app_state"}
+# 自检：名字写错的话，播种数据会被当成业务数据清掉，而症状是「学生档案突然没有字段了」——
+# 离原因很远。所以这里当场炸。
+assert SEEDED_TABLES <= {table.name for table in Base.metadata.sorted_tables}, (
+    f"SEEDED_TABLES 里有不存在的表名：{SEEDED_TABLES - {t.name for t in Base.metadata.sorted_tables}}"
 )
+# 倒着取：先子表后主表（外键开着，先删主表会被约束拦下）
+BUSINESS_TABLES = [
+    table.name
+    for table in reversed(Base.metadata.sorted_tables)
+    if table.name not in SEEDED_TABLES
+]
 
 # 存在 `app_state` 里、但属于「业务数据」的键（每个班一份）。
 # 不清的话，上一个用例的座位快照会让下一个用例的「能回退吗」显示出错。

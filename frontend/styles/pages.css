@@ -340,3 +340,14 @@
   line-height: 1.7;
 }
 .archive-alert.danger { border-left-color: var(--rose-500); background: var(--rose-100); }
+
+
+/* ---------- 班级费用看板 ---------- */
+.fee-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.fee-card {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.fee-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }

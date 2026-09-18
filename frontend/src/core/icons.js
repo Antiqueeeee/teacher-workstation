@@ -24,6 +24,8 @@ const PATHS = {
     '<path d="M4.5 16.5V5.5h7v11"/><path d="M11.5 9.5h4v7"/><path d="M6.5 8.5h3M6.5 11.5h3M6.5 14h3M13 12h1M13 14.5h1"/>',
   broom:
     '<path d="M9 3.5l3.5 3.5-3 3L6 6.5z"/><path d="M7.5 8.5L5 15.5l7-2.5"/><path d="M5 15.5h9" />',
+  coin:
+    '<circle cx="10" cy="10" r="6.5"/><path d=\"M10 7v6M8.5 8.5h3M8.5 11.5h3\" />',
   grid: '<path d="M4.5 4.5h11v11h-11z"/><path d="M4.5 8.2h11M4.5 11.9h11M8.2 4.5v11M11.9 4.5v11"/>',
   edit: '<path d="M4 16h4l9-9-4-4-9 9z"/>',
   trash: '<path d="M5 7h10M9 7V5h2v2M7 7l1 10h4l1-10"/>',

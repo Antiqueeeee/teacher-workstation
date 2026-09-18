@@ -22,6 +22,7 @@ import { activitiesPageDef } from './pages/class_activities.js';
 import { eventsPageDef } from './pages/class_events.js';
 import { conflictsPageDef } from './pages/conflicts.js';
 import { dormsPageDef } from './pages/dorms.js';
+import { feesPageDef } from './pages/fees.js';
 import { dutyGroupsPageDef } from './pages/duty_groups.js';
 import { grantsPageDef } from './pages/grants.js';
 import { guardiansPageDef } from './pages/guardians.js';
@@ -57,6 +58,7 @@ const PAGE_DEFS = [
   cadresPageDef,
   youthMembersPageDef,
   dutyGroupsPageDef,
+  feesPageDef,
   attendancePageDef,
   homeworkPageDef,
   scoresPageDef,
