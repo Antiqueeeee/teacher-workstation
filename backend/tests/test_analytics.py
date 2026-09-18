@@ -310,3 +310,84 @@ def test_substitute_brief_only_lists_key_health_records(client, db_session):
 
     brief = client.get("/api/v1/analytics/substitute", params={"classId": class_id}).json()["data"]
     assert [row["studentName"] for row in brief["health"]] == ["简报体质甲"]
+
+
+# ---------- 数据看板 ----------
+
+
+def _dashboard(client, class_id: int, days: int = 14) -> dict:
+    response = client.get("/api/v1/analytics/dashboard", params={"days": days, "classId": class_id})
+    assert response.status_code == 200, response.text
+    return response.json()["data"]
+
+
+def test_dashboard_keeps_unregistered_days_empty(client, db_session):
+    """未登记的日子在趋势里是**空**，不是 100%（旧应用把它画成满勤）。"""
+    class_id = _class_id(db_session)
+    student = _student(db_session, "看板学生甲", "H9020")
+    today = date.today().isoformat()
+    client.post(
+        "/api/v1/attendance",
+        json={"date": today, "student_name": student.name, "type": "迟到"},
+        params={"classId": class_id},
+    )
+
+    data = _dashboard(client, class_id, days=5)
+    assert len(data["attendanceTrend"]) == 5
+    registered = [day for day in data["attendanceTrend"] if day["registered"]]
+    assert len(registered) == 1 and registered[0]["date"] == today
+    assert registered[0]["rate"] == 100  # 只有迟到 → 出勤率 100%
+    assert all(day["rate"] is None for day in data["attendanceTrend"] if not day["registered"])
+
+
+def test_dashboard_tops_count_by_student_not_by_name(client, db_session):
+    """Top 榜按 student_id 去重 —— 旧应用按姓名，重名会合并成一个人。"""
+    class_id = _class_id(db_session)
+    twin_a = _student(db_session, "看板同名", "H9021")
+    twin_b = _student(db_session, "看板同名", "H9022")
+    today = date.today().isoformat()
+
+    # 用点名按 studentId 登记（同名走不了姓名那条路）
+    client.put(
+        "/api/v1/attendance/day",
+        json={
+            "date": today,
+            "classId": class_id,
+            "entries": [
+                {"studentId": twin_a.id, "type": "旷课"},
+                {"studentId": twin_b.id, "type": "旷课"},
+            ],
+        },
+    )
+
+    data = _dashboard(client, class_id, days=5)
+    assert len(data["absentTop"]) == 2  # 两个人，不是「一个叫这名字的人」
+    assert {row["studentId"] for row in data["absentTop"]} == {twin_a.id, twin_b.id}
+    assert all(row["count"] == 1 for row in data["absentTop"])
+
+
+def test_dashboard_discipline_breakdown_and_monthly(client, db_session):
+    class_id = _class_id(db_session)
+    student = _student(db_session, "看板违纪甲", "H9023")
+    today = date.today().isoformat()
+    for level, kind in (("严重", "课堂纪律"), ("轻微", "作业纪律"), ("一般", "课堂纪律")):
+        client.post(
+            "/api/v1/disciplines",
+            json={"date": today, "student_name": student.name, "type": kind, "detail": "x", "level": level},
+            params={"classId": class_id},
+        )
+    client.post(
+        "/api/v1/talks",
+        json={"date": today, "student_name": student.name, "reason": "x", "content": "y"},
+        params={"classId": class_id},
+    )
+
+    data = _dashboard(client, class_id)
+    assert data["discipline"]["byLevel"] == {"严重": 1, "轻微": 1, "一般": 1}
+    assert data["discipline"]["byType"] == {"课堂纪律": 2, "作业纪律": 1}
+    assert data["discipline"]["open"] == 3
+    assert data["discipline"]["top"][0]["count"] == 3
+    # 月度走势的月份按时间正序，最后一个就是这个月
+    assert data["months"][-1] == today[:7]
+    assert data["monthly"]["talks"][-1] == 1
+    assert data["monthly"]["contacts"][-1] == 0

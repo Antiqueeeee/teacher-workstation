@@ -30,6 +30,7 @@ import { meetingsPageDef } from './pages/meetings.js';
 import { healthRecordsPageDef } from './pages/health_records.js';
 import { homeworkPageDef } from './pages/homework.js';
 import { rulesPageDef } from './pages/rules.js';
+import { dashboardPage } from './pages/dashboard.js';
 import { disciplinesPageDef } from './pages/disciplines.js';
 import { talksPageDef } from './pages/talks.js';
 import { visitsPageDef } from './pages/visits.js';
@@ -46,6 +47,7 @@ import { todosPageDef } from './pages/todos.js';
 const PAGE_DEFS = [
   homePage,
   substitutePage,
+  dashboardPage,
   studentsPageDef,
   guardiansPageDef,
   disciplinesPageDef,

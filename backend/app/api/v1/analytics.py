@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db.engine import get_session
 from app.schemas.registry import CONTACT
-from app.services.analytics_service import followups, overview, substitute_brief
+from app.services.analytics_service import dashboard, followups, overview, substitute_brief
 from app.services.class_scope import resolve_class_id
 from app.services.params import as_date
 
@@ -47,3 +47,17 @@ def get_substitute(request: Request, session: Session = Depends(get_session)):
     params = request.query_params
     day = as_date(params.get("date") or date.today().isoformat(), "date")
     return {"ok": True, "data": substitute_brief(session, _class_id(request, session), day)}
+
+
+@router.get("/dashboard")
+def get_dashboard(request: Request, session: Session = Depends(get_session)):
+    """数据看板：出勤趋势、违纪分布与 Top、沟通/大事记月度走势。
+
+    口径都从各模块自己的服务取（未登记的日子在趋势里是**空**，不是 100%）。
+    """
+    params = request.query_params
+    try:
+        days = int(params.get("days") or 14)
+    except ValueError:
+        days = 14
+    return {"ok": True, "data": dashboard(session, _class_id(request, session), days=days)}

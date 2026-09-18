@@ -165,6 +165,9 @@ export const api = {
   clearData: (payload, classId) =>
     request('/settings/clear', { method: 'POST', body: payload, params: { classId } }).then((p) => p.data),
 
+  /** 数据看板：出勤趋势、违纪分布、Top 榜、月度走势。 */
+  dashboard: (days, classId) => request('/analytics/dashboard', { params: { days, classId } }).then((p) => p.data),
+
   /** 代课/交接简报（某一天；后端汇总，用的还是各模块自己的口径）。 */
   substituteBrief: (date, classId) =>
     request('/analytics/substitute', { params: { date, classId } }).then((p) => p.data),

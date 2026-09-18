@@ -363,3 +363,94 @@ def substitute_brief(session: Session, class_id: int, day: date) -> dict[str, An
         # 如实说明缺了哪一段，而不是留一块空白让人猜
         "missingSections": ["今日课表（要等「课程表」模块落地）"],
     }
+
+
+def dashboard(session: Session, class_id: int, *, days: int = 14, months: int = 6) -> dict[str, Any]:
+    """数据看板要的数：出勤趋势、违纪分布与 Top、沟通/大事记月度走势。
+
+    **口径一律从各模块自己的服务取**：出勤率来自 `attendance_rate`（未登记的天是空，
+    不是 100%）、违纪与沟通按 **student_id 去重**（旧应用按姓名，重名会合并成一个人 —— `01` §7.3）。
+    """
+    from app.models.communication import ClassEvent, Talk
+    from app.models.contact import ContactLog
+    from app.models.discipline import Discipline
+    from app.services.attendance_rate import range_summary
+
+    today = date.today()
+    start = today - timedelta(days=max(1, days) - 1)
+    summary = range_summary(session, class_id, start, today)
+
+    discipline_rows = list(
+        session.scalars(
+            select(Discipline).where(
+                Discipline.deleted_at.is_(None), Discipline.class_id == class_id
+            )
+        )
+    )
+    by_level: dict[str, int] = {}
+    by_type: dict[str, int] = {}
+    by_student: dict[int, dict[str, Any]] = {}
+    for row in discipline_rows:
+        by_level[row.level] = by_level.get(row.level, 0) + 1
+        by_type[row.type] = by_type.get(row.type, 0) + 1
+        if row.student_id:
+            item = by_student.setdefault(
+                row.student_id, {"studentId": row.student_id, "studentName": row.student_name, "count": 0}
+            )
+            item["count"] += 1
+
+    # 缺席 Top：按 **student_id** 去重（日小结里给的是姓名，重名会合并成一个人）
+    absent_top: dict[int, dict[str, Any]] = {}
+    absent_records = session.scalars(
+        select(Attendance).where(
+            Attendance.class_id == class_id,
+            Attendance.date >= start,
+            Attendance.date <= today,
+            Attendance.type.in_(("病假", "事假", "旷课")),
+        )
+    )
+    for row in absent_records:
+        item = absent_top.setdefault(
+            row.student_id,
+            {"studentId": row.student_id, "studentName": row.student_name, "count": 0},
+        )
+        item["count"] += 1
+
+    # 月度走势：联系 / 谈话 / 大事记各按月计数（近 months 个月）
+    month_keys: list[str] = []
+    cursor = date(today.year, today.month, 1)
+    for _ in range(max(1, months)):
+        month_keys.append(f"{cursor.year:04d}-{cursor.month:02d}")
+        cursor = date(cursor.year - 1, 12, 1) if cursor.month == 1 else date(cursor.year, cursor.month - 1, 1)
+    month_keys.reverse()
+
+    def month_counts(model, column, extra=None) -> list[int]:
+        query = select(model).where(model.deleted_at.is_(None), model.class_id == class_id)
+        if extra is not None:
+            query = query.where(extra)
+        counts = {key: 0 for key in month_keys}
+        for row in session.scalars(query):
+            value = getattr(row, column)
+            key = value.strftime("%Y-%m") if hasattr(value, "strftime") else str(value)[:7]
+            if key in counts:
+                counts[key] += 1
+        return [counts[key] for key in month_keys]
+
+    return {
+        "days": max(1, days),
+        "attendanceTrend": [day.to_dict() for day in summary.days],
+        "discipline": {
+            "total": len(discipline_rows),
+            "open": sum(1 for row in discipline_rows if row.open_case),
+            "byLevel": by_level,
+            "byType": by_type,
+            "top": sorted(by_student.values(), key=lambda item: -item["count"])[:5],
+        },
+        "absentTop": sorted(absent_top.values(), key=lambda item: -item["count"])[:5],
+        "months": month_keys,
+        "monthly": {
+            "contacts": month_counts(ContactLog, "date"),
+            "talks": month_counts(Talk, "date"),
+            "events": month_counts(ClassEvent, "date"),
+        },
+    }

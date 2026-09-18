@@ -376,3 +376,30 @@
   .brief-alert { background: none; border-left: 2px solid #666; }
   .brief-block { break-inside: avoid; }
 }
+
+
+/* ---------- 图表（手写 SVG，不引图表库） ---------- */
+.chart { width: 100%; height: auto; overflow: visible; }
+.chart-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 4; }
+.chart-axis { fill: var(--ink-400); font-size: 10px; }
+.chart-axis.mid { text-anchor: middle; }
+.chart-line { fill: none; stroke: var(--ice-600); stroke-width: 2; stroke-linejoin: round; }
+.chart-dot { fill: var(--ice-600); }
+.chart-dot:hover { r: 4; }
+.chart-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-500); }
+.chart-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
+.chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+
+.bar-chart { display: flex; align-items: flex-end; gap: 8px; }
+.bar-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+.bar-value { font-size: 11.5px; color: var(--ink-500); font-variant-numeric: tabular-nums; }
+.bar-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.bar-fill { width: 100%; border-radius: 4px 4px 0 0; }
+.bar-label { font-size: 11.5px; color: var(--ink-500); }
+
+.hbar-list { display: grid; gap: 6px; }
+.hbar-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.hbar-label { flex: 0 0 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { flex: 1; height: 12px; border-radius: 6px; background: var(--ink-100); overflow: hidden; }
+.hbar-fill { display: block; height: 100%; border-radius: 6px; }
+.hbar-value { flex: 0 0 56px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-600); }
