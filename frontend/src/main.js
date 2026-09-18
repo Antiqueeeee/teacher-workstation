@@ -14,13 +14,21 @@ import { icon } from './core/icons.js';
 import { currentKey, register, setDefault, start } from './core/router.js';
 import { getSpec, setRegistry } from './core/store.js';
 import { guardiansPageDef } from './pages/guardians.js';
+import { homeworkPageDef } from './pages/homework.js';
 import { rulesPageDef } from './pages/rules.js';
 import { studentsPageDef } from './pages/students.js';
 import { templatesPageDef } from './pages/templates.js';
 import { todosPageDef } from './pages/todos.js';
 
 // 顺序即侧栏顺序；分组由页面自己声明
-const PAGE_DEFS = [studentsPageDef, guardiansPageDef, todosPageDef, rulesPageDef, templatesPageDef];
+const PAGE_DEFS = [
+  studentsPageDef,
+  guardiansPageDef,
+  homeworkPageDef,
+  todosPageDef,
+  rulesPageDef,
+  templatesPageDef,
+];
 
 /** 数据就绪后才构建页面对象（见各 pages/*.js 顶部说明）。 */
 let pages = [];
