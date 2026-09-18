@@ -66,6 +66,19 @@ def test_duplicate_sno_gets_a_readable_error(client):
     assert "学号" in response.json()["error"]["message"]
 
 
+def test_stats_can_group_by_dynamic_fields(client):
+    """统计的分组也必须走 json_extract。
+
+    曾经这里用 `getattr(model, key)` 取字段 —— 普通列没问题，
+    学生档案的 JSON 字段直接 AttributeError。而「统计」和「列表」不同源，
+    正是这个项目反复要避免的形状。
+    """
+    client.post("/api/v1/students", json={"name": "统计分组测试", "sno": "D9008", "boarding": "住校"})
+    stats = client.get("/api/v1/students/stats", params={"q": "统计分组测试"}).json()["data"]
+    assert stats["total"] == 1
+    assert stats["groups"]["boarding"] == {"住校": 1}
+
+
 def test_import_accepts_real_aliases(client):
     csv_text = "学籍号,姓名,生日,住宿,手机号\nD9005,别名导入测试,2008-05-06,住校,13800001111\n"
     preview = client.post(

@@ -48,7 +48,7 @@ from app.schemas.registry import FieldSpec, TableSpec
 from app.services.class_scope import resolve_class_id
 from app.services.field_value import CODE_MISSING_REQUIRED, apply_defaults, parse_value
 from app.services.params import as_int
-from app.services.table_query import build_conditions, build_list_query
+from app.services.table_query import build_conditions, build_list_query, field_expr
 
 # 这些键由系统管理，出现在提交体里不算「未知字段」，但也不允许客户端直接改
 RESERVED_KEYS = frozenset({"id", "class_id", "classId", "created_at", "updated_at", "deleted_at"})
@@ -185,7 +185,9 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
 
         groups: dict[str, dict[str, int]] = {}
         for column in spec.filter_keys:
-            attr = getattr(model, column)
+            # 必须走 field_expr：JSON 字段（学生档案的 extra）不是模型属性，
+            # 直接 getattr(model, key) 会抛 AttributeError（踩过一次）
+            attr = field_expr(spec, column)
             rows = session.execute(
                 select(attr, func.count()).select_from(model).where(*conditions).group_by(attr)
             ).all()

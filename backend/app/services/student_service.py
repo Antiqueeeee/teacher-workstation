@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import INVALID_VALUE, ApiError
 from app.db.engine import SessionLocal
 from app.models.student import Student, StudentFieldDef
-from app.schemas.registry import ColumnSpec, FieldSpec, TableSpec
+from app.schemas.registry import DYNAMIC_TABLES, ColumnSpec, FieldSpec, TableSpec
 from app.services.student_fields import build_defs_from_template
 
 # 这两个是**真实列**（身份字段：列表、搜索、导入判重、点名都靠它），其余都在 extra JSON 里
@@ -118,3 +118,12 @@ def check_unique_sno(values: dict[str, Any], session: Session, row: Any = None) 
             f"学号「{sno}」在这个班里已经有了，请检查是否重复导入或学号填错",
             detail={"field": "sno", "value": sno},
         )
+
+
+def register_dynamic_tables() -> None:
+    """把动态表注册进注册表。
+
+    应用启动、工具脚本、测试都调用它 —— 注册只此一处。
+    漏掉一处的表现是「表不见了」（`get_spec("students")` 返回 None），很难往这里想。
+    """
+    DYNAMIC_TABLES["students"] = students_spec

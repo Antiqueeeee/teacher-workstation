@@ -118,12 +118,13 @@ def create_app() -> FastAPI:
     setup_logging()
 
     # 动态表（学生档案）：字段定义存在库里，表声明每次请求现算。
-    # 在这里注册 provider 而不是写进注册表常量 —— 老师加完字段不必重启服务。
+    # 注册只有一处（student_service.register_dynamic_tables）—— 工具脚本也用同一个，
+    # 否则「学生档案是动态表」这件事会在应用、脚本、测试里各写一遍，
+    # 而漏掉一处的表现是「表不见了」，很难查。
     from app.api.router import register_dynamic_routers
-    from app.schemas.registry import DYNAMIC_TABLES
-    from app.services.student_service import students_spec
+    from app.services.student_service import register_dynamic_tables
 
-    DYNAMIC_TABLES["students"] = students_spec
+    register_dynamic_tables()
 
     app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
     register_error_handlers(app)

@@ -6,7 +6,7 @@
 - 「导出当前筛选结果」同理 —— 各写一遍，导出的内容和屏幕上看到的迟早不一致，
   而用户会拿导出文件去对账。
 
-字段取值的取法统一在 `_field_expr`：普通字段取列，声明了 `json_fields` 的
+字段取值的取法统一在 `field_expr`：普通字段取列，声明了 `json_fields` 的
 （学生档案的 `extra`）取 `json_extract` —— 搜索、排序、筛选因此都自动支持两种存储。
 """
 
@@ -29,7 +29,7 @@ from app.services.params import as_optional_int, is_truthy
 FILTER_PREFIX = "filter."
 
 
-def _field_expr(spec: TableSpec, key: str):
+def field_expr(spec: TableSpec, key: str):
     """字段的 SQL 表达式：JSON 字段走 json_extract，普通字段直接取列。"""
     if key in spec.json_fields:
         if not spec.json_column:
@@ -58,7 +58,7 @@ def build_conditions(spec: TableSpec, session: Session, params: Any) -> list:
     keyword = (params.get("q") or "").strip()
     if keyword and spec.search_keys:
         like = f"%{keyword}%"
-        conditions.append(or_(*[_field_expr(spec, key).like(like) for key in spec.search_keys]))
+        conditions.append(or_(*[field_expr(spec, key).like(like) for key in spec.search_keys]))
 
     for raw_key, raw_value in params.items():
         if not raw_key.startswith(FILTER_PREFIX) or raw_value == "":
@@ -74,7 +74,7 @@ def build_conditions(spec: TableSpec, session: Session, params: Any) -> list:
                 # 筛选值不合法时不要静默忽略，否则用户会以为「筛出来就这些」
                 raise ApiError(INVALID_VALUE, issue.message, detail={"filter": column})
             value = parsed
-        conditions.append(_field_expr(spec, column) == value)
+        conditions.append(field_expr(spec, column) == value)
 
     return conditions
 
@@ -85,7 +85,7 @@ def build_order_by(spec: TableSpec, params: Any) -> list:
         sort_key = spec.default_sort[0]
     default_dir = "desc" if spec.default_sort[1] < 0 else "asc"
     direction = (params.get("dir") or default_dir).strip().lower()
-    column = _field_expr(spec, sort_key)
+    column = field_expr(spec, sort_key)
     # 次级排序固定按 id 倒序：同一天导入的几十条记录才不会每次刷新都换顺序
     return [column.desc() if direction.startswith("d") else column.asc(), spec.model.id.desc()]
 
