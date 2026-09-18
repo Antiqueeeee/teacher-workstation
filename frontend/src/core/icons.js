@@ -11,6 +11,8 @@ const PATHS = {
   book: '<path d="M4 5.5A2 2 0 0 1 6 3.5h10v13H6a2 2 0 0 0-2 2z"/><path d="M4 5.5v13"/>',
   message:
     '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6A1.5 1.5 0 0 1 14.5 13H8l-4 3.5z"/>',
+  home:
+    '<path d="M4 9.5l6-5 6 5"/><path d="M5.5 9v7h9V9"/><path d="M8.5 16v-4h3v4" />',
   list: '<path d="M4 6h12M4 10h12M4 14h8"/>',
   pencil:
     '<path d="M7.5 3.5h5v2.5h-5z"/><path d="M7.5 4.5h-2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-10a1 1 0 0 0-1-1h-2"/><path d="M7.5 9.5h5M7.5 12.5h3.5"/>',

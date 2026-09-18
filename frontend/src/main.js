@@ -16,6 +16,7 @@ import { getSpec, setRegistry } from './core/store.js';
 import { attendancePageDef } from './pages/attendance.js';
 import { dormDutyPageDef } from './pages/dorm-duty.js';
 import { contactsPageDef } from './pages/contacts.js';
+import { homePage } from './pages/home.js';
 import { dormsPageDef } from './pages/dorms.js';
 import { guardiansPageDef } from './pages/guardians.js';
 import { homeworkPageDef } from './pages/homework.js';
@@ -28,6 +29,7 @@ import { todosPageDef } from './pages/todos.js';
 
 // 顺序即侧栏顺序；分组由页面自己声明
 const PAGE_DEFS = [
+  homePage,
   studentsPageDef,
   guardiansPageDef,
   contactsPageDef,
@@ -118,7 +120,11 @@ async function bootstrap() {
     return;
   }
 
-  pages = PAGE_DEFS.map((def) => createCrudPage({ ...def, spec: getSpec(def.specKey) }));
+  // 两种页面：通用列表页（注册表驱动）与**自定义页面**（首页/看板这类聚合页，
+  // 自己实现 render）。判断依据是「有没有自带 render」。
+  pages = PAGE_DEFS.map((def) =>
+    def.render ? def : createCrudPage({ ...def, spec: getSpec(def.specKey) }),
+  );
   pages.forEach(register);
   setDefault(pages[0].key);
 

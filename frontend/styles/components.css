@@ -550,3 +550,46 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .media-doc { align-items: flex-start; }
 .media-lightbox { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .media-lightbox img { max-width: 100%; max-height: 70vh; border-radius: var(--r-sm); }
+
+
+/* ---------- 工作台首页 ---------- */
+.todo-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.todo-card {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ink-200);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.todo-card.warn { border-left-color: var(--beak-400); }
+.todo-card.ok { border-left-color: var(--mint-500); }
+.todo-card-head { display: flex; align-items: baseline; justify-content: space-between; }
+.todo-card-head span:first-child { font-weight: 600; color: var(--ink-800); }
+.todo-count { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.todo-card.warn .todo-count { color: var(--beak-600); }
+.todo-card.ok .todo-count { color: var(--mint-600); }
+
+.followup-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.followup-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+}
+.followup-item:hover { border-color: var(--ice-400); background: var(--ice-50); }
+.followup-text { color: var(--ink-700); }
+
+.quick-links { display: flex; flex-wrap: wrap; gap: 6px; }

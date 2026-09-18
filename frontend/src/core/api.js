@@ -132,6 +132,11 @@ export const api = {
   seatClear: (classId) =>
     request('/seats/clear', { method: 'POST', body: {}, params: { classId } }).then((p) => p.data),
 
+  /** 首页与看板聚合：**口径在后端**，前端只显示（首页的数必须与各页一致）。 */
+  overview: (classId) => request('/analytics/overview', { params: { classId } }).then((p) => p.data),
+  followups: (classId, limit) =>
+    request('/analytics/followups', { params: { classId, limit } }).then((p) => p.data),
+
   /** 媒体：上传（multipart）、一条记录的附件列表、删除。 */
   async mediaUpload(ownerTable, ownerId, file) {
     const form = new FormData();
