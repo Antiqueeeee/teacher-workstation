@@ -12,7 +12,9 @@ SLOT = TableSpec(
     entity="课表",
     model=ScheduleSlot,
     columns=(
-        ColumnSpec("weekday_no", "星期", w="84px", numeric=True),
+        # 显示用**星期几的汉字**（模型上有 `weekday` 这一列）；排序仍走 `weekday_no`
+        # —— 按汉字排是按码位排，星期五会跑到星期一前面。所以这一列不给点排序
+        ColumnSpec("weekday", "星期", w="84px", sortable=False),
         ColumnSpec("period", "节次", w="80px"),
         ColumnSpec("subject", "科目", w="90px"),
         ColumnSpec("teacher", "任课教师", w="110px"),

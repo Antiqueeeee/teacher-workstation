@@ -16,7 +16,7 @@ from fastapi import APIRouter, Body, Depends, File, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.errors import TABLE_NOT_FOUND, ApiError
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.schemas.registry import TableSpec, get_spec
 from app.services import import_service, table_io
 from app.services.class_scope import resolve_class_id
@@ -62,7 +62,7 @@ async def import_preview(table: str, file: UploadFile = File(...)):
 def import_commit(
     table: str,
     body: dict = Body(...),
-    session: Session = Depends(get_session),
+    session: Session = Depends(db_session),
 ):
     spec = _spec(table)
     rows = body.get("rows") or []
@@ -70,6 +70,6 @@ def import_commit(
         class_id = resolve_class_id(spec, body.get("classId"), session)
         data = import_service.commit(spec, session, rows, class_id)
     except import_service.ImportFailed as exc:
-        # 抛出去后，get_session 依赖会回滚，库里不会留下半份导入结果
+        # 抛出去后，会话收尾时会回滚，库里不会留下半份导入结果
         raise ApiError(exc.code, exc.message) from None
     return {"ok": True, "data": data}

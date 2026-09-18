@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.schemas.registry import FEE_CATEGORY
 from app.services.class_scope import resolve_class_id
 from app.services.fee_service import (
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/fees", tags=["班级费用"])
 
 
 @router.get("/overview")
-def get_overview(request: Request, session: Session = Depends(get_session)):
+def get_overview(request: Request, session: Session = Depends(db_session)):
     """全班费用概览：每个项目的应收/已收/未收 + 流水收支余额 + 合计。"""
     class_id = resolve_class_id(FEE_CATEGORY, request.query_params.get("classId"), session)
     data = overview(session, class_id)
@@ -37,7 +37,7 @@ def get_overview(request: Request, session: Session = Depends(get_session)):
 
 
 @router.get("/categories/{category_id}")
-def get_category_detail(category_id: int, session: Session = Depends(get_session)):
+def get_category_detail(category_id: int, session: Session = Depends(db_session)):
     """一个项目的明细数字 + 催缴名单 + 「一条记录都没有」的学生名单。"""
     category = get_category(session, category_id)
     return {
@@ -54,7 +54,7 @@ def get_category_detail(category_id: int, session: Session = Depends(get_session
 def post_records(
     category_id: int,
     body: dict = Body(default_factory=dict),
-    session: Session = Depends(get_session),
+    session: Session = Depends(db_session),
 ):
     """给一批学生各建一条应缴记录（默认给还没建记录的）。
 
@@ -70,7 +70,7 @@ def post_records(
 
 
 @router.put("/categories/{category_id}/amount")
-def put_amount(category_id: int, body: dict = Body(default_factory=dict), session: Session = Depends(get_session)):
+def put_amount(category_id: int, body: dict = Body(default_factory=dict), session: Session = Depends(db_session)):
     """改每人应缴标准。
 
     **默认不回填历史记录** —— 应缴是收钱那一刻的约定。要回填得显式传 `backfill=true`，

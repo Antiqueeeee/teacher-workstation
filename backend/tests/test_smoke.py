@@ -175,3 +175,42 @@ def test_batch_skips_deleted_rows(client):
         json={"action": "update", "ids": [created["id"]], "patch": {"content": "不该被改"}},
     ).json()["data"]
     assert result == {"requested": 1, "affected": 0}
+
+
+def test_write_returns_500_when_the_commit_fails(client, monkeypatch):
+    """提交失败时必须回 500，**不能先给老师回一句「已保存」**。
+
+    早先提交发生在响应发出**之后**（FastAPI 的 yield 依赖就是这样），于是
+    「磁盘满 / 库被别的进程锁住 / 约束到提交才炸」这类失败发生时，客户端已经拿到
+    `200 {"ok":true}` —— 老师以为记上了，其实没记上。现在提交在响应之前
+    （`app/api/committing_route.py`），失败就走统一的错误处理器。
+
+    断言要用 `raise_server_exceptions=False` 的客户端：Starlette 在把 500 发给客户端
+    之后还会把异常重新抛给调用方（好让服务器打日志），默认的测试客户端因此会直接抛。
+    """
+    from fastapi.testclient import TestClient
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.orm import Session
+
+    from app.main import app
+
+    original = Session.commit
+    calls = {"n": 0}
+
+    def flaky(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OperationalError("database or disk is full", None, Exception("full"))
+        return original(self)
+
+    # 先进 with（那会跑 lifespan，里面有提交）再打补丁，免得把启动也弄挂
+    with TestClient(app, raise_server_exceptions=False) as raw:
+        monkeypatch.setattr(Session, "commit", flaky)
+        response = raw.post("/api/v1/todos", json={"content": "提交失败测试"})
+        assert response.status_code == 500, response.text
+        assert response.json()["ok"] is False
+        assert calls["n"] >= 1  # 写请求确实在响应之前提交过
+        monkeypatch.undo()
+
+    # 回滚了，没写进去
+    assert client.get("/api/v1/todos").json()["meta"]["total"] == 0

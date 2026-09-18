@@ -19,7 +19,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.models.student import StudentFieldDef
 from app.services.student_fields import (
     create_def,
@@ -54,24 +54,24 @@ def _serialize(definition: StudentFieldDef) -> dict[str, Any]:
 
 
 @router.get("/fields")
-def list_fields(session: Session = Depends(get_session)) -> dict:
+def list_fields(session: Session = Depends(db_session)) -> dict:
     return {"ok": True, "data": [_serialize(row) for row in list_defs(session)]}
 
 
 @router.post("/fields", status_code=201)
-def create_field(body: dict[str, Any] = Body(...), session: Session = Depends(get_session)) -> dict:
+def create_field(body: dict[str, Any] = Body(...), session: Session = Depends(db_session)) -> dict:
     return {"ok": True, "data": _serialize(create_def(session, body))}
 
 
 @router.patch("/fields/{field_id}")
 def update_field(
-    field_id: int, body: dict[str, Any] = Body(...), session: Session = Depends(get_session)
+    field_id: int, body: dict[str, Any] = Body(...), session: Session = Depends(db_session)
 ) -> dict:
     return {"ok": True, "data": _serialize(update_def(session, field_id, body))}
 
 
 @router.delete("/fields/{field_id}")
-def delete_field(field_id: int, session: Session = Depends(get_session)) -> dict:
+def delete_field(field_id: int, session: Session = Depends(db_session)) -> dict:
     get_def(session, field_id)  # 不存在就 404（与其余接口一致）
     key = delete_def(session, field_id)
     return {

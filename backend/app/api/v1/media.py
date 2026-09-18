@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.errors import INVALID_VALUE, NOT_FOUND, ApiError
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.models.media import Media
 from app.services import media_service
 from app.services.class_scope import resolve_class_id
@@ -49,7 +49,7 @@ def upload(
     ownerId: int = Form(...),
     note: str = Form(""),
     classId: str = Form(""),
-    session: Session = Depends(get_session),
+    session: Session = Depends(db_session),
 ):
     """上传一个附件（照片 / 录音 / 视频 / 文档）。
 
@@ -88,7 +88,7 @@ def _commit_or_cleanup(session: Session, media) -> None:
 
 
 @router.get("")
-def list_media(request: Request, session: Session = Depends(get_session)):
+def list_media(request: Request, session: Session = Depends(db_session)):
     """一条记录的附件（`ownerTable` + `ownerId`），或整个班的附件（只给 `classId`）。"""
     params = request.query_params
     owner_table = (params.get("ownerTable") or "").strip()
@@ -126,7 +126,7 @@ def storage():
 
 
 @router.get("/{media_id}/file")
-def download(media_id: int, session: Session = Depends(get_session)):
+def download(media_id: int, session: Session = Depends(db_session)):
     """原件。能不能在浏览器里直接播由 `playable` 决定，这里一律照实返回。"""
     media = media_service.get_media(session, media_id)
     try:
@@ -148,7 +148,7 @@ def download(media_id: int, session: Session = Depends(get_session)):
 
 
 @router.get("/{media_id}/thumb")
-def thumb(media_id: int, w: int = 320, session: Session = Depends(get_session)):
+def thumb(media_id: int, w: int = 320, session: Session = Depends(db_session)):
     """缩略图（图片）。列表用 320，点开看大的用 1200。"""
     media = media_service.get_media(session, media_id)
     if media.kind != "image":
@@ -161,7 +161,7 @@ def thumb(media_id: int, w: int = 320, session: Session = Depends(get_session)):
 
 
 @router.delete("/{media_id}")
-def delete(media_id: int, session: Session = Depends(get_session)):
+def delete(media_id: int, session: Session = Depends(db_session)):
     """删除 → 进回收站（文件挪到 `data/trash/日期/`），记录标记删除，可恢复。"""
     media = media_service.get_media(session, media_id)
     media_service.delete_media(session, media)
@@ -170,7 +170,7 @@ def delete(media_id: int, session: Session = Depends(get_session)):
 
 
 @router.post("/{media_id}/restore")
-def restore(media_id: int, session: Session = Depends(get_session)):
+def restore(media_id: int, session: Session = Depends(db_session)):
     """从回收站恢复。"""
     media = media_service.get_media(session, media_id, include_deleted=True)
     media_service.restore_media(session, media)
@@ -179,7 +179,7 @@ def restore(media_id: int, session: Session = Depends(get_session)):
 
 
 @router.post("/purge")
-def purge(request: Request, body: dict = Body(default_factory=dict), session: Session = Depends(get_session)):
+def purge(request: Request, body: dict = Body(default_factory=dict), session: Session = Depends(db_session)):
     """按日期**真正清理**文件（默认只清录音，不动照片）。
 
     这是唯一会真正删文件的入口，所以要求显式传日期，且默认只覆盖 `audio`。

@@ -33,9 +33,10 @@ from fastapi import APIRouter, Body, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.committing_route import CommittingRoute
 from app.api.errors import INVALID_VALUE, NOT_FOUND, ApiError
 from app.db.base import utcnow
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.schemas.common import page_meta, serialize_row
 from app.schemas.registry import FieldSpec, TableSpec
 from app.services.params import as_int
@@ -89,10 +90,14 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
     """按表声明生成路由。传的是 **provider** 而不是 spec 本身 ——
     动态表的声明每次请求现取（老师加字段后立刻生效）。"""
     bootstrap_spec = spec_provider()
-    router = APIRouter(prefix=f"/{bootstrap_spec.key}", tags=[bootstrap_spec.title])
+    router = APIRouter(
+        prefix=f"/{bootstrap_spec.key}",
+        tags=[bootstrap_spec.title],
+        route_class=CommittingRoute,  # 写请求在响应前落库（见 api/committing_route.py）
+    )
 
     @router.get("")
-    def list_items(request: Request, session: Session = Depends(get_session)):
+    def list_items(request: Request, session: Session = Depends(db_session)):
         spec = spec_provider()
         query = build_list_query(spec, session, request.query_params)
         total = query.total(session)
@@ -109,7 +114,7 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
         }
 
     @router.get("/stats")
-    def stats(request: Request, session: Session = Depends(get_session)):
+    def stats(request: Request, session: Session = Depends(db_session)):
         """KPI 用。与列表**共用同一套条件** —— 否则搜完之后的总数不是搜索结果的总数。"""
         spec = spec_provider()
         conditions = build_conditions(spec, session, request.query_params)
@@ -133,7 +138,7 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
         return {"ok": True, "data": spec_provider().to_dict()}
 
     @router.get("/{row_id}")
-    def get_one(row_id: int, session: Session = Depends(get_session)):
+    def get_one(row_id: int, session: Session = Depends(db_session)):
         spec = spec_provider()
         return {"ok": True, "data": serialize_row(spec, _get_or_404(spec, session, row_id))}
 
@@ -141,7 +146,7 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
     def create_one(
         request: Request,
         body: dict[str, Any] = Body(default_factory=dict),
-        session: Session = Depends(get_session),
+        session: Session = Depends(db_session),
     ):
         spec = spec_provider()
         row = save_row(
@@ -157,7 +162,7 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
     def update_one(
         row_id: int,
         body: dict[str, Any] = Body(default_factory=dict),
-        session: Session = Depends(get_session),
+        session: Session = Depends(db_session),
     ):
         spec = spec_provider()
         row = _get_or_404(spec, session, row_id)
@@ -165,7 +170,7 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
         return {"ok": True, "data": serialize_row(spec, row)}
 
     @router.delete("/{row_id}")
-    def delete_one(row_id: int, session: Session = Depends(get_session)):
+    def delete_one(row_id: int, session: Session = Depends(db_session)):
         spec = spec_provider()
         row = _get_or_404(spec, session, row_id)
         if spec.before_delete is not None:
@@ -179,7 +184,7 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
         return {"ok": True, "data": serialize_row(spec, row) if spec.soft_delete else {"id": row_id}}
 
     @router.post("/{row_id}/restore")
-    def restore_one(row_id: int, session: Session = Depends(get_session)):
+    def restore_one(row_id: int, session: Session = Depends(db_session)):
         spec = spec_provider()
         row = session.get(spec.model, row_id)
         if row is None:
@@ -190,7 +195,7 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
         return {"ok": True, "data": serialize_row(spec, row)}
 
     @router.post("/batch")
-    def batch(body: dict[str, Any] = Body(...), session: Session = Depends(get_session)):
+    def batch(body: dict[str, Any] = Body(...), session: Session = Depends(db_session)):
         spec = spec_provider()
         action = (body.get("action") or "").strip()
         ids = [as_int(raw, "ids") for raw in (body.get("ids") or [])]

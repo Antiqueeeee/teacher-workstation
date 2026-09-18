@@ -17,6 +17,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.errors import INVALID_VALUE, NOT_FOUND, ApiError
+from app.db.base import Base
 from app.db.engine import SessionLocal
 from app.models.student import Student, StudentFieldDef
 from app.schemas.registry import DYNAMIC_TABLES, ColumnSpec, FieldSpec, TableSpec
@@ -77,7 +78,7 @@ def build_spec_from_defs(defs: list[StudentFieldDef]) -> TableSpec:
         json_fields=frozenset(
             definition.key for definition in defs if definition.key not in COLUMN_KEYS
         ),
-        before_save=check_unique_sno,
+        before_save=apply_student,
     )
 
 
@@ -93,6 +94,66 @@ def students_spec() -> TableSpec:
     except OperationalError:
         defs = build_defs_from_template()
     return build_spec_from_defs(defs)
+
+
+def sync_student_name_snapshots(session: Session, student_id: int, name: str) -> int:
+    """学生改名后，把各表里的**姓名快照**一并刷新。
+
+    名字的快照散在二十来张表里（出勤、作业未交、课程名单与成绩、违纪、沟通留档、
+    座位、床位、监护人、缴费记录…）。一处处改必然漏，而漏掉的表现是
+    「学生档案里叫张三，出勤记录里还写着张三丰」——数据都在（引用的是 `student_id`），
+    只是显示的名字是旧的。
+
+    所以放在这里**一处**做：凡是同时有 `student_id` 与 `student_name` 列的表都刷一遍
+    （用 Core 的 UPDATE，不逐条 load）。**自由文本里的名字不在范围内**
+    （如班会记录的「参与人」写的是「全班」或一串名字）—— 那些没有 `student_id`，
+    程序无从知道指的是谁，硬改只会改错。
+    """
+    changed = 0
+    for table in Base.metadata.sorted_tables:
+        columns = table.columns
+        if "student_id" not in columns or "student_name" not in columns:
+            continue
+        result = session.execute(
+            table.update().where(columns.student_id == student_id).values(student_name=name)
+        )
+        changed += result.rowcount or 0
+
+    # 值日组的成员名是**拼进文本缓存**的（`members_cache`），按引用重算一遍。
+    # Core 的 UPDATE 绕过了 ORM，会话里已加载的对象还是旧值 —— 所以直接按
+    # 「是他本人的那条就用新名字」拼，不去读可能过期的属性
+    from app.models.classroom import DutyGroup, DutyMember
+
+    for group in session.scalars(
+        select(DutyGroup)
+        .join(DutyMember, DutyMember.duty_id == DutyGroup.id)
+        .where(DutyMember.student_id == student_id)
+        .distinct()
+    ):
+        group.members_cache = "、".join(
+            name if link.student_id == student_id else link.student_name for link in group.members
+        )
+    session.flush()
+    return changed
+
+
+def apply_student(values: dict[str, Any], session: Session, row: Any = None) -> Any:
+    """学生档案的保存前钩子：学号查重 + **改名时把各表的姓名快照同步掉**。
+
+    改名要等行落库后才好处理，所以返回一个回调（与作业写未交名单同一套做法）。
+    """
+    check_unique_sno(values, session, row)
+    if row is None or "name" not in values:
+        return None
+    new_name = str(values.get("name") or "").strip()
+    if not new_name or new_name == row.name:
+        return None
+    student_id = row.id
+
+    def after(saved: Any) -> None:
+        sync_student_name_snapshots(session, student_id, saved.name)
+
+    return after
 
 
 def check_unique_sno(values: dict[str, Any], session: Session, row: Any = None) -> None:

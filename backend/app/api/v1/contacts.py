@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.schemas.registry import CONTACT
 from app.services.class_scope import resolve_class_id
 from app.services.contact_service import follow_ups as list_follow_ups
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/contacts", tags=["家长联系日志"])
 
 
 @router.get("/follow-ups")
-def follow_ups(request: Request, session: Session = Depends(get_session)):
+def follow_ups(request: Request, session: Session = Depends(db_session)):
     """标记了「待再次联系」的记录（首页跟进清单用同一个函数）。
 
     放在专用接口里而不是让前端筛：这条口径要与首页卡片一致。

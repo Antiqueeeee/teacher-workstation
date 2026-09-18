@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.errors import TABLE_NOT_FOUND, ApiError
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.schemas.registry import TableSpec, get_spec
 from app.services import table_io
 from app.services.table_query import export_rows
@@ -32,7 +32,7 @@ def _spec(table: str) -> TableSpec:
 
 
 @router.get("/export/{table}.xlsx")
-def export_xlsx(table: str, request: Request, session: Session = Depends(get_session)):
+def export_xlsx(table: str, request: Request, session: Session = Depends(db_session)):
     spec = _spec(table)
     rows = export_rows(session, spec, request.query_params, MAX_EXPORT_ROWS)
     if len(rows) == MAX_EXPORT_ROWS:

@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.schemas.registry import YOUTH
 from app.services.class_scope import resolve_class_id
 from app.services.classroom_service import youth_consistency
@@ -20,6 +20,6 @@ router = APIRouter(prefix="/youth_members", tags=["团员名册"])
 
 
 @router.get("/consistency")
-def consistency(request: Request, session: Session = Depends(get_session)):
+def consistency(request: Request, session: Session = Depends(db_session)):
     class_id = resolve_class_id(YOUTH, request.query_params.get("classId"), session)
     return {"ok": True, "data": youth_consistency(session, class_id)}

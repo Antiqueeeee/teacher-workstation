@@ -19,7 +19,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.services.exam_service import (
     clear_scores,
     get_exam,
@@ -35,7 +35,7 @@ router = APIRouter(prefix="/exams", tags=["成绩分析"])
 
 
 @router.get("/{exam_id}/sheet")
-def get_sheet(exam_id: int, session: Session = Depends(get_session)):
+def get_sheet(exam_id: int, session: Session = Depends(db_session)):
     """成绩录入表：科目列（含本场满分）+ 全班每一格。"""
     exam = get_exam(session, exam_id)
     data = sheet_view(session, exam)
@@ -46,7 +46,7 @@ def get_sheet(exam_id: int, session: Session = Depends(get_session)):
 
 @router.put("/{exam_id}/sheet")
 def put_sheet(
-    exam_id: int, body: dict = Body(default_factory=dict), session: Session = Depends(get_session)
+    exam_id: int, body: dict = Body(default_factory=dict), session: Session = Depends(db_session)
 ):
     """按格提交成绩：只改传过来的格子，没提到的格原样不动。"""
     exam = get_exam(session, exam_id)
@@ -56,7 +56,7 @@ def put_sheet(
 
 
 @router.get("/{exam_id}/report")
-def get_report(exam_id: int, session: Session = Depends(get_session)):
+def get_report(exam_id: int, session: Session = Depends(db_session)):
     """本场报表：名次（同分并列）、及格/优秀、单科统计、与上一场对比。
 
     **唯一口径**：界面、导出、首页卡片读的都是这一个结果。
@@ -66,14 +66,14 @@ def get_report(exam_id: int, session: Session = Depends(get_session)):
 
 
 @router.get("/{exam_id}/subjects")
-def get_subjects(exam_id: int, session: Session = Depends(get_session)):
+def get_subjects(exam_id: int, session: Session = Depends(db_session)):
     exam = get_exam(session, exam_id)
     return {"ok": True, "data": ordered_subjects(session, exam.id)}
 
 
 @router.put("/{exam_id}/subjects")
 def put_subjects(
-    exam_id: int, body: dict = Body(default_factory=dict), session: Session = Depends(get_session)
+    exam_id: int, body: dict = Body(default_factory=dict), session: Session = Depends(db_session)
 ):
     """设置这场考试考哪几科、每科满分。
 
@@ -86,7 +86,7 @@ def put_subjects(
 
 
 @router.post("/{exam_id}/clear-scores")
-def clear(exam_id: int, session: Session = Depends(get_session)):
+def clear(exam_id: int, session: Session = Depends(db_session)):
     """清空本场成绩（考试本身留着）。返回删掉的条数。"""
     exam = get_exam(session, exam_id)
     return {"ok": True, "data": {"removed": clear_scores(session, exam)}}

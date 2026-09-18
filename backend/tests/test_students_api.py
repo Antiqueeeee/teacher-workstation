@@ -164,3 +164,104 @@ def test_field_key_cannot_be_renamed(client):
     response = client.patch(f"/api/v1/students/fields/{field['id']}", json={"key": "hobby2"})
     assert response.status_code == 400
     assert "不能改" in response.json()["error"]["message"]
+
+
+# 这两个小工具只为下面两个「改名」用例服务：它们要直接读库确认快照名
+def _class_id(session) -> int:
+    from sqlalchemy import select
+
+    from app.models.class_ import Class
+
+    return session.scalar(select(Class.id).where(Class.deleted_at.is_(None)).limit(1))
+
+
+def _select_all(session, model):
+    from sqlalchemy import select
+
+    return list(session.scalars(select(model)))
+
+
+def _student(session, name: str, sno: str):
+    from app.models.student import Student
+
+    student = Student(class_id=_class_id(session), name=name, sno=sno, extra={})
+    session.add(student)
+    session.commit()
+    return student
+
+
+def test_renaming_a_student_refreshes_the_name_snapshots(client, db_session):
+    """改名之后，各表里的**姓名快照**要跟着变（引用的是 id，显示的是名字）。
+
+    快照名散在二十来张表里，一处处改必然漏 —— 漏掉的表现是
+    「档案里叫张三，出勤记录里还写着张三丰」，而数据其实都在。
+    """
+    from app.models.attendance import Attendance
+    from app.models.homework import HomeworkUnsubmitted
+    from app.models.seat import Seat
+
+    class_id = _class_id(db_session)
+    student = _student(db_session, "改名前甲", "R9101")
+    client.post(
+        "/api/v1/attendance",
+        json={"date": "2026-09-10", "student_name": student.name, "type": "旷课"},
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/seats",
+        json={"row": 1, "col": 1, "student_name": student.name},
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/homework",
+        json={
+            "date": "2026-09-11",
+            "subject": "数学",
+            "content": "练习",
+            "unsubmitted_names": student.name,
+        },
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/duty_groups",
+        json={"weekday": "星期一", "area": "教室地面", "members_text": student.name},
+        params={"classId": class_id},
+    )
+
+    updated = client.patch(
+        f"/api/v1/students/{student.id}", json={"name": "改名后甲"}, params={"classId": class_id}
+    )
+    assert updated.status_code == 200, updated.text
+
+    db_session.expire_all()
+    assert _select_all(db_session, Attendance)[0].student_name == "改名后甲"
+    assert _select_all(db_session, Seat)[0].student_name == "改名后甲"
+    assert _select_all(db_session, HomeworkUnsubmitted)[0].student_name == "改名后甲"
+    from app.models.classroom import DutyGroup
+
+    assert _select_all(db_session, DutyGroup)[0].members_cache == "改名后甲"
+
+    # 列表与档案读到的也是新名字
+    rows = client.get("/api/v1/attendance", params={"classId": class_id}).json()["data"]
+    assert rows[0]["student_name"] == "改名后甲"
+
+
+def test_rename_does_not_touch_other_students(client, db_session):
+    """同名/近似名字的学生不受影响 —— 只按 `student_id` 精确刷。"""
+    from app.models.attendance import Attendance
+
+    class_id = _class_id(db_session)
+    target = _student(db_session, "改名甲", "R9102")
+    other = _student(db_session, "改名乙", "R9103")
+    for student in (target, other):
+        client.post(
+            "/api/v1/attendance",
+            json={"date": "2026-09-10", "student_name": student.name, "type": "旷课"},
+            params={"classId": class_id},
+        )
+
+    client.patch(
+        f"/api/v1/students/{target.id}", json={"name": "新名字甲"}, params={"classId": class_id}
+    )
+    rows = {row.student_name for row in _select_all(db_session, Attendance)}
+    assert rows == {"新名字甲", "改名乙"}

@@ -12,7 +12,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.schemas.registry import CONTACT
 from app.services.analytics_service import dashboard, followups, overview, substitute_brief, timeline
 from app.services.class_scope import resolve_class_id
@@ -26,13 +26,13 @@ def _class_id(request: Request, session: Session) -> int:
 
 
 @router.get("/overview")
-def get_overview(request: Request, session: Session = Depends(get_session)):
+def get_overview(request: Request, session: Session = Depends(db_session)):
     """首页 KPI 与今日待办要的数。"""
     return {"ok": True, "data": overview(session, _class_id(request, session))}
 
 
 @router.get("/followups")
-def get_followups(request: Request, session: Session = Depends(get_session)):
+def get_followups(request: Request, session: Session = Depends(db_session)):
     """跨模块的「需要我跟进」清单（按权重排，每条都能跳到具体记录）。"""
     try:
         limit = int(request.query_params.get("limit") or 14)
@@ -42,7 +42,7 @@ def get_followups(request: Request, session: Session = Depends(get_session)):
 
 
 @router.get("/substitute")
-def get_substitute(request: Request, session: Session = Depends(get_session)):
+def get_substitute(request: Request, session: Session = Depends(db_session)):
     """代课/交接简报：某一天的班级情况（考勤、体质、班委、班规、违纪、值日、座位图）。"""
     params = request.query_params
     day = as_date(params.get("date") or date.today().isoformat(), "date")
@@ -50,7 +50,7 @@ def get_substitute(request: Request, session: Session = Depends(get_session)):
 
 
 @router.get("/dashboard")
-def get_dashboard(request: Request, session: Session = Depends(get_session)):
+def get_dashboard(request: Request, session: Session = Depends(db_session)):
     """数据看板：出勤趋势、违纪分布与 Top、沟通/大事记月度走势。
 
     口径都从各模块自己的服务取（未登记的日子在趋势里是**空**，不是 100%）。
@@ -64,7 +64,7 @@ def get_dashboard(request: Request, session: Session = Depends(get_session)):
 
 
 @router.get("/timeline")
-def get_timeline(request: Request, session: Session = Depends(get_session)):
+def get_timeline(request: Request, session: Session = Depends(db_session)):
     """学期时间轴：把几类留档按日期合成一条时间线（分页取） 。"""
     params = request.query_params
     try:

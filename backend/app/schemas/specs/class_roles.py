@@ -88,7 +88,9 @@ DUTY = TableSpec(
     entity="值日",
     model=DutyGroup,
     columns=(
-        ColumnSpec("weekday_no", "星期", w="84px", numeric=True),
+        # 显示用**星期几的汉字**（模型上有 `weekday` 这一列）；排序仍走 `weekday_no`
+        # —— 按汉字排是按码位排，星期五会跑到星期一前面。所以这一列不给点排序
+        ColumnSpec("weekday", "星期", w="84px", sortable=False),
         ColumnSpec("group_name", "小组", w="76px"),
         ColumnSpec("area", "负责区域", w="126px"),
         ColumnSpec("members_cache", "值日成员"),

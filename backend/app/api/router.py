@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, FastAPI
 
+from app.api.committing_route import CommittingRoute
 from app.api.v1.attendance_day import router as attendance_day_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.class_roles import router as class_roles_router
@@ -30,7 +31,8 @@ from app.api.v1.transfer import router as transfer_router
 from app.config import APP_VERSION
 from app.schemas.registry import DYNAMIC_TABLES, TABLES, all_specs
 
-router = APIRouter(prefix="/api/v1")
+# 写请求在**响应发出之前**提交（`route_class` 一个地方管全部接口，新加接口不会漏）
+router = APIRouter(prefix="/api/v1", route_class=CommittingRoute)
 
 
 @router.get("/health", tags=["系统"])

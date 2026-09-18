@@ -15,7 +15,7 @@ from fastapi import APIRouter, Body, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.api.errors import INVALID_VALUE, ApiError
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.services.course_service import add_students, get_course, get_course_class
 from app.services.course_stats import course_detail, course_overview, exam_analysis
 from app.services.params import as_int
@@ -24,13 +24,13 @@ router = APIRouter(prefix="/courses", tags=["学科与成绩"])
 
 
 @router.get("/overview")
-def get_overview(session: Session = Depends(get_session)):
+def get_overview(session: Session = Depends(db_session)):
     """课程看板：每门课的班级数/人数/课时/作业与提交率/最近一场考试。"""
     return {"ok": True, "data": course_overview(session)}
 
 
 @router.get("/{course_id}/detail")
-def get_detail(course_id: int, session: Session = Depends(get_session)):
+def get_detail(course_id: int, session: Session = Depends(db_session)):
     """课程详情：班级块（含班主任/课代表联系方式与进度）+ 每块的名单。"""
     return {"ok": True, "data": course_detail(session, course_id)}
 
@@ -39,7 +39,7 @@ def get_detail(course_id: int, session: Session = Depends(get_session)):
 def get_analysis(
     course_id: int,
     request: Request,
-    session: Session = Depends(get_session),
+    session: Session = Depends(db_session),
 ):
     """课程成绩分析：各场统计（含名次、及格率）、分析文字、成绩生长曲线。
 
@@ -54,7 +54,7 @@ def get_analysis(
 def post_students(
     course_id: int,
     body: dict = Body(default_factory=dict),
-    session: Session = Depends(get_session),
+    session: Session = Depends(db_session),
 ):
     """一次加一批学生到这个课程的某个班里（填姓名，顿号分隔）。
 

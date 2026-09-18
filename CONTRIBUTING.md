@@ -47,6 +47,25 @@ teacher-workstation/
 
 依赖方向**单向**：`pages → components → core`。
 
+前两条禁令**有测试守着**（`backend/tests/test_layering.py`）：
+`api/` 里出现 SQL 或 `services/` 里 import FastAPI 都会让测试红掉
+（唯一豁免是 `api/v1/crud_factory.py` —— 它本身就是「把表声明变成一组查询」的生成器）。
+「学新接口时顺手来一句 `select(...)`」太自然了，所以这条不能只写在文档里。
+
+### 2.1 两个与「归属」有关的约定
+
+- **班级归属**：大多数表是 `class_scoped=True`，`class_id` 由 `resolve_class_id`
+  从 `classId` 参数或「唯一那个班」解析出来。**但有一类表的班级是从别的表推出来的**
+  （课程名单、课程成绩的班级来自「这门课教哪个班」）—— 这类表声明
+  `class_from_hook=True`：`resolve_class_id` 只认显式传来的 `classId`，不回退到
+  「唯一的那个班」（否则多班部署下建一条课程名单会先报「还没有班级切换界面」，而它
+  根本不需要班级切换），钩子负责把 `class_id` 写进去（那一列 NOT NULL，漏写会当场报错）。
+- **写请求的提交时机**：POST/PUT/PATCH/DELETE 的提交发生在**响应发出之前**
+  （`api/committing_route.py`，由注册路由时的 `route_class` 统一生效，
+  新加接口不会漏）。FastAPI 的 yield 依赖在响应之后才收尾，只靠它的话
+  「磁盘满 / 库被锁 / 约束到提交才炸」都会让客户端先拿到 `200 已保存`。
+  测试见 `tests/test_smoke.py::test_write_returns_500_when_the_commit_fails`。
+
 ---
 
 ## 3. 单文件行数（硬约束）

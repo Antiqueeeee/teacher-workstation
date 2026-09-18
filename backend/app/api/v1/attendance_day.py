@@ -14,7 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.db.engine import get_session
+from app.api.session import db_session
 from app.schemas.registry import ATTENDANCE
 from app.services.attendance_rate import range_summary
 from app.services.attendance_service import day_view, parse_entries, roll_call
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/attendance", tags=["出勤记录"])
 
 
 @router.get("/day")
-def get_day(request: Request, session: Session = Depends(get_session)):
+def get_day(request: Request, session: Session = Depends(db_session)):
     """某天的点名表：全班名单 + 每人当天状态 + 当天小结。"""
     params = request.query_params
     day = as_date(params.get("date"), "date")
@@ -35,7 +35,7 @@ def get_day(request: Request, session: Session = Depends(get_session)):
 
 @router.put("/day")
 def put_day(
-    body: dict = Body(default_factory=dict), session: Session = Depends(get_session)
+    body: dict = Body(default_factory=dict), session: Session = Depends(db_session)
 ):
     """按天整体提交点名结果：当天状态以这次提交为准（含被改回「正常」的）。"""
     day = as_date(body.get("date"), "date")
@@ -46,7 +46,7 @@ def put_day(
 
 
 @router.get("/summary")
-def summary(request: Request, session: Session = Depends(get_session)):
+def summary(request: Request, session: Session = Depends(db_session)):
     """区间小结：看板、趋势图、代课简报、首页卡片读的都是这一个结果。"""
     params = request.query_params
     start = as_date(params.get("from"), "from")

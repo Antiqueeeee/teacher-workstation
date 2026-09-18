@@ -12,6 +12,8 @@
  * - 每张图都给 `title`/`aria-label`，鼠标停在点上能看到具体数值。
  */
 
+import { esc } from '../core/dom.js';
+
 const PALETTE = ['#2a93b8', '#3fc7a3', '#f0be3c', '#8b7be8', '#ff9a3c', '#e84c4c'];
 
 function scale(values, { pad = 0.1 } = {}) {
@@ -73,7 +75,7 @@ export function lineChart(points, { width = 640, height = 160, suffix = '', min,
     .flat()
     .map(
       ([xx, yy, point]) =>
-        `<circle class="chart-dot" cx="${xx}" cy="${yy}" r="2.5"><title>${point.label}：${
+        `<circle class="chart-dot" cx="${xx}" cy="${yy}" r="2.5"><title>${esc(point.label)}：${
           typeof point.value === 'number' ? `${point.value}${suffix}` : '没有数据'
         }</title></circle>`,
     )
@@ -82,7 +84,7 @@ export function lineChart(points, { width = 640, height = 160, suffix = '', min,
   const labels = points
     .map((point, index) =>
       index % Math.ceil(points.length / 7) === 0
-        ? `<text x="${x(index)}" y="${height - 6}" class="chart-axis mid">${point.label}</text>`
+        ? `<text x="${x(index)}" y="${height - 6}" class="chart-axis mid">${esc(point.label)}</text>`
         : '',
     )
     .join('');
@@ -105,7 +107,7 @@ export function barChart(items, { height = 150, suffix = '' } = {}) {
           2,
           ((item.value || 0) / max) * 100,
         )}%;background:${item.color || PALETTE[0]}"></div></div>
-        <div class="bar-label">${item.label}</div>
+        <div class="bar-label">${esc(item.label)}</div>
       </div>`,
     )
     .join('')}</div>`;
@@ -118,7 +120,7 @@ export function hBarList(items, { suffix = '' } = {}) {
   return `<div class="hbar-list">${items
     .map(
       (item, index) => `<div class="hbar-row">
-        <span class="hbar-label" title="${item.label}">${item.label}</span>
+        <span class="hbar-label" title="${esc(item.label)}">${esc(item.label)}</span>
         <span class="hbar-track"><span class="hbar-fill" style="width:${((item.value || 0) / max) * 100}%;
           background:${PALETTE[index % PALETTE.length]}"></span></span>
         <span class="hbar-value">${item.value || 0}${suffix}</span>
@@ -149,7 +151,7 @@ export function multiLineChart(series, labels, { width = 640, height = 170 } = {
     ${labels
       .map((label, index) =>
         index % Math.ceil(labels.length / 6) === 0
-          ? `<text x="${x(index)}" y="${height - 6}" class="chart-axis mid">${label}</text>`
+          ? `<text x="${x(index)}" y="${height - 6}" class="chart-axis mid">${esc(label)}</text>`
           : '',
       )
       .join('')}
@@ -157,7 +159,7 @@ export function multiLineChart(series, labels, { width = 640, height = 170 } = {
   <div class="chart-legend">${series
     .map(
       (item, index) =>
-        `<span><i style="background:${PALETTE[index % PALETTE.length]}"></i>${item.label}</span>`,
+        `<span><i style="background:${PALETTE[index % PALETTE.length]}"></i>${esc(item.label)}</span>`,
     )
     .join('')}</div>`;
 }
