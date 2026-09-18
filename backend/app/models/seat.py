@@ -17,7 +17,7 @@ from __future__ import annotations
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, SoftDeleteMixin, TimestampMixin
+from app.db.base import Base, TimestampMixin
 
 # 座位表规模的上下限：0 列在老应用里是允许的（`:10480`），结果是一张空表 + 排位无处可放
 MIN_GRID = 1
@@ -46,13 +46,19 @@ class SeatPlan(Base, TimestampMixin):
     rule: Mapped[str] = mapped_column(Text, default=DEFAULT_RULE, nullable=False)
 
 
-class Seat(Base, TimestampMixin, SoftDeleteMixin):
-    """一个座位格子。空座位也可以是一条记录（只有 row/col，没有学生）。"""
+class Seat(Base, TimestampMixin):
+    """一个座位格子。空座位也可以是一条记录（只有 row/col，没有学生）。
+
+    **没有软删除**（与床位同一套做法）：腾空座位就是删掉这一行。
+    带软删除的话，唯一约束会把「幽灵行」也算进去 —— 腾空过的格子再也排不进人、
+    同一个学生也换不了位置，而且报的是 500（评审实测三条路径全中）。
+    这些约束之所以能省掉条件，正是因为表里不存在已删除的行。
+    """
 
     __tablename__ = "seats"
     __table_args__ = (
         UniqueConstraint("class_id", "row", "col", name="uq_seats_class_position"),
-        # 一个学生只能坐一个座位（空座不算）—— 与床位同一套做法
+        # 一个学生只能坐一个座位（空座不算）
         Index(
             "uq_seats_student",
             "class_id",

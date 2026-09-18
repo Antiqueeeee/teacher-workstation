@@ -153,6 +153,8 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
     def delete_one(row_id: int, session: Session = Depends(get_session)):
         spec = spec_provider()
         row = _get_or_404(spec, session, row_id)
+        if spec.before_delete is not None:
+            spec.before_delete(session, row)  # 删不了就抛错，不让它删一半
         if spec.soft_delete:
             row.deleted_at = utcnow()
         else:
@@ -186,6 +188,8 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
 
         if action == "delete":
             for row in rows:
+                if spec.before_delete is not None:
+                    spec.before_delete(session, row)
                 if spec.soft_delete:
                     row.deleted_at = utcnow()
                 else:

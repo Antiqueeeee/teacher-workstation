@@ -16,7 +16,8 @@ from app.models.dorm import (
 )
 from app.models.seat import Seat
 from app.schemas.table_spec import ColumnSpec, FieldSpec, TableSpec
-from app.services.dorm_service import apply_bed, apply_duty, apply_room
+from app.services.dorm_duty_service import apply_duty
+from app.services.dorm_service import apply_bed, apply_room, apply_room_delete
 from app.services.seat_service import apply_seat
 
 DORM_ROOM = TableSpec(
@@ -51,6 +52,8 @@ DORM_ROOM = TableSpec(
     default_sort=("room_no", 1),
     dedupe_keys=("building", "room_no"),
     before_save=apply_room,
+    # 里面还住着人时不允许删房间（见 apply_room_delete 的说明）
+    before_delete=apply_room_delete,
 )
 
 
@@ -100,8 +103,9 @@ DORM_BED = TableSpec(
     # 床位**没有软删除**：腾床位就是删掉这一行。软删除会让 (room_id, bed_no)
     # 唯一约束与「重新分配同一个床位」冲突，而「找回一条床位记录」并不需要
     soft_delete=False,
-    # 一个学生只能有一张床（唯一索引兜底），导入判重按人算
-    dedupe_keys=("student_name",),
+    # 判重按「同一房间同一床位」：床位号解析成整数之后，「1号床」与「01」在
+    # **导入预览**里就会被认成重复（原先要等到提交才整批回滚 —— 老师白填一次）
+    dedupe_keys=("room_no", "bed_no"),
     extra_keys=("student_id", "room_id", "room_label", "orphan"),
     before_save=apply_bed,
 )
@@ -141,7 +145,9 @@ DORM_DUTY = TableSpec(
     search_keys=("student_name", "task", "checker", "note"),
     filter_keys=("weekday", "result"),
     default_sort=("weekday_no", 1),
-    dedupe_keys=("room_no", "weekday", "task"),  # 同一房间同一天同一项任务，重复导入不翻倍
+    # 同一房间、同一天、同一个人只会有一条安排（同一项任务可以由多人分担，
+    # 所以不能按任务判重）；重复导入不翻倍
+    dedupe_keys=("room_no", "weekday", "student_name"),
     extra_keys=("room_id", "room_label", "student_id", "orphan"),
     before_save=apply_duty,
 )
@@ -183,6 +189,9 @@ SEAT = TableSpec(
     ),
     search_keys=("student_name", "note"),
     filter_keys=("locked",),
+    # 座位**没有软删除**：腾空就是删掉那一行（见 models/seat.py 的说明）——
+    # 带软删除时唯一约束会把幽灵行也算进去，腾空过的格子再也排不进人
+    soft_delete=False,
     default_sort=("row", 1),
     dedupe_keys=("row", "col"),  # 同一格重复导入不翻倍
     extra_keys=("student_id", "position", "orphan"),

@@ -219,7 +219,8 @@ def test_shift_wraps_around_and_keeps_notes(client, db_session):
     moved = _cell(board, 2, 1)
     assert moved["studentName"] == "轮换甲"
     assert moved["note"] == "靠窗"  # 备注跟着走
-    assert moved["seatId"] == seat["id"]
+    # 不断言 seatId 不变：批量操作是「算好位置再删掉重建」，id 不保证沿用
+    assert seat["id"] is not None
 
 
 def test_shift_permutes_a_whole_column(client, db_session):
@@ -399,3 +400,92 @@ def test_unknown_student_is_reported(client, db_session):
     response = _seat(client, class_id, 1, 1, "座位查无此人")
     assert response.status_code == 400
     assert "座位查无此人" in response.json()["error"]["message"]
+
+
+# ---------- 软删除与唯一约束（评审实测的三条 500） ----------
+
+
+def test_a_cleared_seat_can_be_used_again(client, db_session):
+    """腾空座位就是删掉那一行 —— 腾空过的格子必须能再排人。
+
+    座位原来是软删除的，而 `UNIQUE(class_id,row,col)` 不带 `deleted_at` 条件，
+    于是幽灵行占着格子：再排人直接 500。同类问题还有「同一个学生腾空后换位置」
+    （学生唯一索引也把幽灵行算进去）。现在座位不软删，这两个入口都能用。
+    """
+    class_id = _class_id(db_session)
+    _plan(client, class_id, 2, 2)
+    _student(db_session, "腾空重排甲", "S9030")
+    _student(db_session, "腾空重排乙", "S9031")
+    first = _seat(client, class_id, 1, 1, "腾空重排甲").json()["data"]
+
+    assert client.delete(f"/api/v1/seats/{first['id']}").status_code == 200
+    again = _seat(client, class_id, 1, 1, "腾空重排乙")
+    assert again.status_code == 201, again.text
+    assert _cell(_board(client, class_id), 1, 1)["studentName"] == "腾空重排乙"
+
+
+def test_a_student_can_move_after_their_seat_was_cleared(client, db_session):
+    class_id = _class_id(db_session)
+    _plan(client, class_id, 2, 2)
+    _student(db_session, "腾空换位甲", "S9032")
+    first = _seat(client, class_id, 1, 1, "腾空换位甲").json()["data"]
+
+    assert client.delete(f"/api/v1/seats/{first['id']}").status_code == 200
+    moved = _seat(client, class_id, 2, 2, "腾空换位甲")
+    assert moved.status_code == 201, moved.text
+    assert _cell(_board(client, class_id), 2, 2)["studentName"] == "腾空换位甲"
+
+
+def test_restore_brings_back_the_plan_size_too(client, db_session):
+    """回退要把座位表大小一起还原 —— 只还原座位会把人放到格子外面。
+
+    「批量操作 → 把表改小 → 回退」这条路径下，旧写法会把座位还原到 rows 之外，
+    那个人既不显示在网格里、也不在「未排座」名单里（评审实测第三人找不到）。
+    """
+    class_id = _class_id(db_session)
+    _plan(client, class_id, 2, 2)
+    _student(db_session, "回退缩表甲", "S9033")
+    _student(db_session, "回退缩表乙", "S9034")
+    _seat(client, class_id, 1, 1, "回退缩表甲")
+    _seat(client, class_id, 2, 1, "回退缩表乙")
+
+    # 批量操作先存快照（此刻是 2 排 × 2 列、两个人）
+    assert client.post(
+        "/api/v1/seats/shift", json={"direction": "up", "step": 1}, params={"classId": class_id}
+    ).status_code == 200
+
+    # 删掉 2 排那个座位（轮换是删掉重建，id 会变，所以从看板上现取），
+    # 然后把表缩到 1 排（此刻没有座位在格子外，所以放行）
+    row_two = _cell(_board(client, class_id), 2, 1)["seatId"]
+    assert client.delete(f"/api/v1/seats/{row_two}").status_code == 200
+    assert _plan(client, class_id, 1, 2).status_code == 200
+
+    restored = client.post("/api/v1/seats/restore", params={"classId": class_id}).json()["data"]
+    assert restored["rows"] == 2  # 座位表大小跟着还原
+    assert restored["seated"] == 2
+    seated = {
+        cell["studentName"]
+        for line in restored["grid"]
+        for cell in line
+        if cell["studentName"]
+    }
+    assert seated == {"回退缩表甲", "回退缩表乙"}
+    assert restored["unseated"] == []
+
+
+def test_shift_reports_seats_that_fall_outside_the_grid(client, db_session):
+    """座位落在表格外（只可能来自手工改库）时报清楚，而不是 KeyError 500。"""
+    from app.models.seat import Seat
+
+    class_id = _class_id(db_session)
+    _plan(client, class_id, 2, 2)
+    _student(db_session, "越界座位甲", "S9035")
+    student_id = db_session.scalar(select(Student.id).where(Student.name == "越界座位甲"))
+    db_session.add(Seat(class_id=class_id, row=5, col=1, student_id=student_id, student_name="越界座位甲"))
+    db_session.commit()
+
+    response = client.post(
+        "/api/v1/seats/shift", json={"direction": "up", "step": 1}, params={"classId": class_id}
+    )
+    assert response.status_code == 400, response.text
+    assert "落在座位表外面" in response.json()["error"]["message"]

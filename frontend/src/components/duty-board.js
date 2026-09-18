@@ -16,7 +16,7 @@ import { toast } from './ui.js';
 
 const RESULT_CLASS = { 优秀: 'badge-mint', 合格: 'badge-ice', 待改进: 'badge-rose' };
 
-function itemHtml(room, day, item) {
+function itemHtml(item) {
   return `<button class="duty-item" type="button" data-duty="${item.id}"
     title="${esc(item.note || '')}${item.orphan ? '（学生已从档案删除）' : ''}">
     <span class="duty-who${item.orphan ? ' orphan' : ''}">${esc(item.studentName || '（没填人）')}</span>
@@ -29,7 +29,7 @@ function dayHtml(room, day) {
   return `<div class="duty-day">
     <span class="duty-weekday">${esc(day.weekday)}</span>
     <div class="duty-items">
-      ${day.items.map((item) => itemHtml(room, day, item)).join('')}
+      ${day.items.map((item) => itemHtml(item)).join('')}
     </div>
     <button class="btn btn-sm btn-ghost" type="button"
       data-add="${room.roomId}" data-weekday="${esc(day.weekday)}"

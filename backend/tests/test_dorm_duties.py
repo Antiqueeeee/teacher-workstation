@@ -38,7 +38,7 @@ def _room(client, class_id: int, room_no: str, building: str = "1号楼") -> dic
 
 def _duty(client, class_id: int, **overrides):
     # 值日学生是必填的（一条不知道谁值日的安排没有意义），所以默认给一个真实学生 ——
-    # 用例里要先 
+    # 用例里要先建一个叫「值日学生」的学生（见 _student）
     payload = {"room_no": "203", "weekday": "星期一", "task": "地面清扫", "student_name": "值日学生"}
     payload.update(overrides)
     return client.post("/api/v1/dorm_duties", json=payload, params={"classId": class_id})

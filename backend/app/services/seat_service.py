@@ -1,15 +1,18 @@
-"""座位表的规则：随机排位、整体轮换、交换、以及一次回退。
+"""座位表的规则：随机排位、整体轮换、交换，以及逐条写入的校验。
 
-这一块的算法全部在服务端，而且每个批量操作都**先存一张快照**再改 ——
-旧应用的 `shuffleSeats`（`:10684`）与 `shiftSeats`（`:10644`）都是直接整体替换
-`DB.data.seats`，做错了没有任何退路（`:10704`）。
+这一块的算法全部在服务端，而且每个批量操作都**先存一张快照**再改
+（快照与回退在 `seat_plan.py`）—— 旧应用的 `shuffleSeats`（`:10684`）与
+`shiftSeats`（`:10644`）都是直接整体替换 `DB.data.seats`，做错了没有任何退路
+（`:10704`）。
 
 三个刻意的行为（都是对旧应用的修正）：
 
 1. **随机排位保留备注与锁定座位**。旧应用填空格时强制 `note:''`（`:10700`），
    视力/身高的备注全丢；这里备注跟着学生走，`locked` 的座位连人带位置都不动。
 2. **座位不够时自动加排，并如实报出来**（旧应用会悄悄把 `seatPlan.rows` 撑大）。
-3. **每次批量操作前存一张快照，支持回退一次**（`POST /seats/restore`）。
+3. **置换类的批量写入先算好位置再删掉重建**：逐行 UPDATE 会在中途撞上
+   `UNIQUE(class_id,row,col)`（实测 500），而「删掉重建」时**每个座位都必须有一条
+   去处**（默认原地），否则无处可去的那个会被删掉却不再插回来 —— **人丢了**。
 """
 
 from __future__ import annotations
@@ -20,127 +23,17 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.api.errors import INVALID_VALUE, NOT_FOUND, SEAT_STUDENT_ALREADY_SEATED, SEAT_TAKEN, ApiError
-from app.models.app_state import AppState
-from app.models.seat import DEFAULT_COLS, DEFAULT_RULE, DEFAULT_ROWS, MAX_COLS, MAX_ROWS, Seat, SeatPlan
+from app.api.errors import (
+    INVALID_VALUE,
+    NOT_FOUND,
+    SEAT_STUDENT_ALREADY_SEATED,
+    SEAT_TAKEN,
+    ApiError,
+)
+from app.models.seat import MAX_COLS, MAX_ROWS, Seat
 from app.models.student import Student
 from app.services.params import as_int
-
-SNAPSHOT_KEY = "seat_snapshot"
-
-
-# ---------------------------------------------------------------- 座位表参数
-
-
-def get_plan(session: Session, class_id: int) -> SeatPlan:
-    plan = session.get(SeatPlan, class_id)
-    if plan is None:
-        plan = SeatPlan(class_id=class_id)
-        session.add(plan)
-        session.flush()
-    return plan
-
-
-def set_plan(
-    session: Session, class_id: int, rows: Any, cols: Any, rule: Any = None
-) -> SeatPlan:
-    """改行列数。**缩小之前先看现有座位** —— 被挪到网格外的座位会变成「看不见但还在」。"""
-    plan = get_plan(session, class_id)
-    new_rows = as_int(rows, "排数")
-    new_cols = as_int(cols, "列数")
-    if not 1 <= new_rows <= MAX_ROWS:
-        raise ApiError(INVALID_VALUE, f"排数要在 1–{MAX_ROWS} 之间", detail={"field": "rows"})
-    if not 1 <= new_cols <= MAX_COLS:
-        raise ApiError(INVALID_VALUE, f"列数要在 1–{MAX_COLS} 之间", detail={"field": "cols"})
-
-    outside = session.scalars(
-        select(Seat).where(
-            Seat.deleted_at.is_(None),
-            Seat.class_id == class_id,
-            (Seat.row > new_rows) | (Seat.col > new_cols),
-        )
-    ).all()
-    if outside:
-        seated = [seat for seat in outside if seat.student_id is not None]
-        detail = "、".join(f"{seat.position} {seat.student_name or '（空）'}" for seat in outside[:6])
-        raise ApiError(
-            INVALID_VALUE,
-            f"缩小之后有 {len(outside)} 个座位落到格子外面（{detail}）"
-            + (f"，其中 {len(seated)} 个坐着人。" if seated else "。")
-            + "请先把这些座位腾空或删掉。",
-            detail={"field": "rows", "outside": len(outside), "withStudent": len(seated)},
-        )
-
-    plan.rows = new_rows
-    plan.cols = new_cols
-    if rule is not None:
-        plan.rule = str(rule)
-    session.flush()
-    return plan
-
-
-# ---------------------------------------------------------------- 快照
-
-
-def _save_snapshot(session: Session, class_id: int) -> None:
-    """存一张「现在的座位表」，供回退一次用。只保留最近一张（旧覆盖新）。"""
-    seats = session.scalars(
-        select(Seat).where(Seat.class_id == class_id, Seat.deleted_at.is_(None)).order_by(Seat.row, Seat.col)
-    ).all()
-    payload = [
-        {
-            "row": seat.row,
-            "col": seat.col,
-            "student_id": seat.student_id,
-            "student_name": seat.student_name,
-            "note": seat.note,
-            "locked": seat.locked,
-        }
-        for seat in seats
-    ]
-    key = f"{SNAPSHOT_KEY}:{class_id}"
-    row = session.get(AppState, key)
-    if row is None:
-        session.add(AppState(key=key, value=payload))
-    else:
-        row.value = payload
-    session.flush()
-
-
-def snapshot_exists(session: Session, class_id: int) -> bool:
-    row = session.get(AppState, f"{SNAPSHOT_KEY}:{class_id}")
-    return bool(row and row.value)
-
-
-def restore(session: Session, class_id: int) -> dict[str, Any]:
-    """回退到上一次批量操作之前。只能回一次（旧应用的批量操作没有任何撤销）。"""
-    row = session.get(AppState, f"{SNAPSHOT_KEY}:{class_id}")
-    if row is None or not row.value:
-        raise ApiError(
-            NOT_FOUND,
-            "没有可回退的快照。回退只保留上一次批量操作之前的状态。",
-            status=404,
-        )
-
-    session.execute(delete(Seat).where(Seat.class_id == class_id))
-    restored = 0
-    for item in row.value:
-        session.add(
-            Seat(
-                class_id=class_id,
-                row=item["row"],
-                col=item["col"],
-                student_id=item.get("student_id"),
-                student_name=item.get("student_name", ""),
-                note=item.get("note", ""),
-                locked=bool(item.get("locked")),
-            )
-        )
-        restored += 1
-    session.delete(row)  # 回退一次就用掉，免得连点两次往回退到更早的状态
-    session.flush()
-    return {"restored": restored}
-
+from app.services.seat_plan import get_plan, snapshot_is_available, take_snapshot
 
 # ---------------------------------------------------------------- 排位
 
@@ -168,10 +61,10 @@ def randomize(session: Session, class_id: int, *, seed: int | None = None) -> di
     - 座位不够时自动加排，并如实报出来。
     """
     plan = get_plan(session, class_id)
-    _save_snapshot(session, class_id)
+    take_snapshot(session, class_id)
 
     existing = session.scalars(
-        select(Seat).where(Seat.class_id == class_id, Seat.deleted_at.is_(None))
+        select(Seat).where(Seat.class_id == class_id)
     ).all()
     notes = {seat.student_id: seat.note for seat in existing if seat.student_id and seat.note}
     locked = [seat for seat in existing if seat.locked]
@@ -259,12 +152,12 @@ def shift(session: Session, class_id: int, direction: str, step: Any = 1) -> dic
 
     plan = get_plan(session, class_id)
     seats = session.scalars(
-        select(Seat).where(Seat.class_id == class_id, Seat.deleted_at.is_(None))
+        select(Seat).where(Seat.class_id == class_id)
     ).all()
     if not seats:
         raise ApiError(INVALID_VALUE, "还没有排座位，先一键随机排位或手工添加")
 
-    _save_snapshot(session, class_id)
+    take_snapshot(session, class_id)
     locked_cells = {(seat.row, seat.col) for seat in seats if seat.locked}
     movers = [seat for seat in seats if not seat.locked]
 
@@ -292,7 +185,16 @@ def shift(session: Session, class_id: int, direction: str, step: Any = 1) -> dic
                 continue
             index = {row: position for position, row in enumerate(free)}
             for seat in moving:
-                target[seat.id] = (free[(index[seat.row] + delta) % len(free)], col)
+                position = index.get(seat.row)
+                if position is None:
+                    # 座位落在座位表外面（只可能来自手工改库）：报清楚，别让 KeyError 变成 500
+                    raise ApiError(
+                        INVALID_VALUE,
+                        f"有座位落在座位表外面（{seat.row} 排 {seat.col} 列），"
+                        "轮换会把它转到看不见的地方。请先在列表里处理掉它。",
+                        detail={"seatId": seat.id},
+                    )
+                target[seat.id] = (free[(position + delta) % len(free)], col)
     else:
         delta = -offset if direction == "left" else offset
         for row in range(1, plan.rows + 1):
@@ -302,7 +204,15 @@ def shift(session: Session, class_id: int, direction: str, step: Any = 1) -> dic
                 continue
             index = {col: position for position, col in enumerate(free)}
             for seat in moving:
-                target[seat.id] = (row, free[(index[seat.col] + delta) % len(free)])
+                position = index.get(seat.col)
+                if position is None:
+                    raise ApiError(
+                        INVALID_VALUE,
+                        f"有座位落在座位表外面（{seat.row} 排 {seat.col} 列），"
+                        "轮换会把它转到看不见的地方。请先在列表里处理掉它。",
+                        detail={"seatId": seat.id},
+                    )
+                target[seat.id] = (row, free[(position + delta) % len(free)])
 
     moved = sum(1 for seat in movers if target[seat.id] != (seat.row, seat.col))
     for seat in movers:
@@ -332,7 +242,7 @@ def swap(session: Session, class_id: int, seat_id: int, target_row: int, target_
     「网格里看不见、列表里还在」的重复格。这里位置唯一约束 + 一次事务。
     """
     source = session.get(Seat, seat_id)
-    if source is None or source.class_id != class_id or source.deleted_at is not None:
+    if source is None or source.class_id != class_id:
         raise ApiError(NOT_FOUND, "这个座位不存在，可能已被删除", status=404, detail={"seatId": seat_id})
 
     plan = get_plan(session, class_id)
@@ -348,13 +258,12 @@ def swap(session: Session, class_id: int, seat_id: int, target_row: int, target_
     target = session.scalars(
         select(Seat).where(
             Seat.class_id == class_id,
-            Seat.deleted_at.is_(None),
             Seat.row == target_row,
             Seat.col == target_col,
         )
     ).first()
 
-    _save_snapshot(session, class_id)
+    take_snapshot(session, class_id)
     if target is None:
         source.row, source.col = target_row, target_col
         session.flush()
@@ -414,7 +323,6 @@ def apply_seat(values: dict[str, Any], session: Session, row: Any = None) -> Non
     clash = session.scalars(
         select(Seat).where(
             Seat.class_id == class_id,
-            Seat.deleted_at.is_(None),
             Seat.row == seat_row,
             Seat.col == seat_col,
             Seat.id != self_id,
@@ -434,8 +342,7 @@ def apply_seat(values: dict[str, Any], session: Session, row: Any = None) -> Non
         other = session.scalars(
             select(Seat).where(
                 Seat.class_id == class_id,
-                Seat.deleted_at.is_(None),
-                Seat.student_id == student.id,
+                    Seat.student_id == student.id,
                 Seat.id != self_id,
             )
         ).first()
@@ -483,7 +390,7 @@ def _resolve_student(
 
 def clear_seats(session: Session, class_id: int) -> int:
     """清空座位（座位表参数留着）。破坏性操作，所以先存快照供回退一次。"""
-    _save_snapshot(session, class_id)
+    take_snapshot(session, class_id)
     removed = session.execute(delete(Seat).where(Seat.class_id == class_id)).rowcount or 0
     session.flush()
     return removed
@@ -493,7 +400,7 @@ def board(session: Session, class_id: int) -> dict[str, Any]:
     """座位表要的一份数据：行列数、每格是谁、以及还没排座的学生。"""
     plan = get_plan(session, class_id)
     seats = session.scalars(
-        select(Seat).where(Seat.class_id == class_id, Seat.deleted_at.is_(None))
+        select(Seat).where(Seat.class_id == class_id)
     ).all()
     by_cell = {(seat.row, seat.col): seat for seat in seats}
 
@@ -538,5 +445,5 @@ def board(session: Session, class_id: int) -> dict[str, Any]:
         "seated": len([seat for seat in seats if seat.student_id]),
         "grid": grid,
         "unseated": unseated,
-        "canRestore": snapshot_exists(session, class_id),
+        "canRestore": snapshot_is_available(session, class_id),
     }

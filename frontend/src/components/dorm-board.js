@@ -60,6 +60,7 @@ export function boardHtml(tree) {
     </div>`;
   }
   const unassigned = tree.unassigned;
+  const fullRooms = tree.rooms.filter((room) => room.full);
   return `<div class="board">
     <div class="board-head">
       <span class="board-title">宿舍分布</span>
@@ -70,6 +71,11 @@ export function boardHtml(tree) {
                ${unassigned.length} 名住宿生还没床位
              </button>`
           : '<span class="badge badge-mint">住宿生都有床位了</span>'
+      }
+      ${
+        fullRooms.length
+          ? `<button class="btn btn-sm" type="button" data-full>${fullRooms.length} 间已住满</button>`
+          : ''
       }
       <span class="muted">点空格子加人 · 点床位改人 · 点「N 人间」改容量</span>
     </div>
@@ -125,7 +131,30 @@ async function openAssign({ room, bedNo, unassigned, onDone }) {
           closeModal();
           if (onDone) onDone();
         } catch (error) {
-          // 失败**不关弹窗**：老师能看到原因（床位被占/一人一床/查无此人），改完直接重试
+          // 「这个学生已经有床位了」是日常操作（换床），所以给一条出口：
+          // 直接改他**原来那条**床位记录的房间与床号 —— 一次请求、走同一套校验，
+          // 比「先腾空再分配」少一步，也不会在中途失败时把人弄丢。
+          if (error.code === 'DORM_STUDENT_ALREADY_ASSIGNED' && error.detail?.bedId) {
+            const yes = await confirmBox(
+              `${error.message}<br><br>要把他换到 <strong>${esc(room.label)} ${bedNo} 号床</strong>吗？`,
+              { okText: '换过去' },
+            );
+            if (!yes) return;
+            try {
+              await api.update('dorm_beds', error.detail.bedId, {
+                building: room.building,
+                room_no: room.roomNo,
+                bed_no: bedNo,
+              });
+              toast(`已把 ${name} 换到 ${room.label} ${bedNo} 号床`);
+              closeModal();
+              if (onDone) onDone();
+            } catch (swapError) {
+              toast(swapError.message, 'err', 8000);
+            }
+            return;
+          }
+          // 其余失败**不关弹窗**：老师能看到原因（床位被占/查无此人），改完直接重试
           toast(error.message, 'err', 8000);
         }
       }
@@ -244,12 +273,32 @@ async function openCapacity({ roomId, label, capacity, onDone }) {
 function openUnassigned({ unassigned }) {
   openModal({
     title: '住宿但还没床位的学生',
-    body: `<div class="plain-list">${unassigned
-      .map((student) => `<div>${esc(student.studentName)}<span class="muted">${esc(student.sno || '')}</span></div>`)
-      .join('')}</div>
+    body: `<ul class="plain-list">${unassigned
+      .map((student) => `<li>${esc(student.studentName)}<span class="muted">${esc(student.sno || '')}</span></li>`)
+      .join('')}</ul>
       <div class="muted" style="margin-top:10px">
         这份名单按学生档案里的「住宿 = 住校」来算。要加人请回到看板上点空格子 ——
         床位不满时也能直接点。
+      </div>`,
+    footer: '<button class="btn" type="button" data-cancel>关闭</button>',
+    onMount(root) {
+      root.querySelector('[data-cancel]').addEventListener('click', closeModal);
+    },
+  });
+}
+
+function openFull({ fullRooms }) {
+  openModal({
+    title: '已住满的房间',
+    body: `<ul class="plain-list">${fullRooms
+      .map(
+        (room) =>
+          `<div>${esc(room.label)}<span class="muted"> ${room.occupied}/${room.capacity} 人</span></div>`,
+      )
+      .join('')}</div>
+      <div class="muted" style="margin-top:10px">
+        住满的房间要加人，得先把容量调大（点房间标题旁的「N 人间」）——
+        旧版会在这种情况给出一个没人看得懂的报错。
       </div>`,
     footer: '<button class="btn" type="button" data-cancel>关闭</button>',
     onMount(root) {
@@ -309,6 +358,12 @@ export const dormPanel = {
       if (event.target.closest('[data-unassigned]')) {
         const tree = await api.dormTree(store.currentClassId);
         openUnassigned({ unassigned: tree.unassigned });
+        return;
+      }
+
+      if (event.target.closest('[data-full]')) {
+        const tree = await api.dormTree(store.currentClassId);
+        openFull({ fullRooms: tree.rooms.filter((room) => room.full) });
       }
     });
   },

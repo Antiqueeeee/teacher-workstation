@@ -20,7 +20,8 @@ from sqlalchemy.orm import Session
 from app.db.engine import get_session
 from app.schemas.registry import DORM_BED
 from app.services.class_scope import resolve_class_id
-from app.services.dorm_service import duty_board, room_tree, unassigned_boarders
+from app.services.dorm_duty_service import duty_board
+from app.services.dorm_service import room_tree, unassigned_boarders
 
 router = APIRouter(prefix="/dorms", tags=["宿舍分布"])
 

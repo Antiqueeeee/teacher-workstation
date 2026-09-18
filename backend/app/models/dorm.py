@@ -20,7 +20,6 @@
 
 from __future__ import annotations
 
-from __future__ import annotations
 
 from typing import Any
 
@@ -43,8 +42,9 @@ DEFAULT_CAPACITY = 8
 MAX_CAPACITY = 40  # 一间宿舍住 40 人以上一定是填错了，挡在写入时
 
 # 星期词表（与旧应用一致：`WEEKDAYS.concat(['星期六','星期日'])`）。
-# 存的是**序号 1–7**，不是汉字：旧应用按 `indexOf` 排序，词表里出现一个没见过的写法
-# 就排到最前面；存序号则排序天然正确，汉字只用在显示上。
+# 值日表里**两个都存**：`weekday` 存汉字（老师手里的表就是汉字，导入导出直接对得上），
+# `weekday_no` 存序号专供排序 —— 旧应用按 `indexOf` 排序，词表里出现没见过的写法
+# 就排到最前面；而按汉字本身排序是按码位排（星期五会跑到星期一前面）。
 WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
 # 值日任务：旧应用 `:13957` 的固定 7 项
@@ -79,8 +79,17 @@ def weekday_label(number: int | None) -> str:
 class DormRoom(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "dorm_rooms"
     __table_args__ = (
-        UniqueConstraint(
-            "class_id", "building", "room_no", name="uq_dorm_rooms_class_building_room"
+        # **部分**唯一索引（只约束未删除的房间）：房间是软删除的，用普通唯一约束的话
+        # 「删掉 203 再建一间 203」会直接撞约束报 500 —— 出口被自己堵死（评审实测）。
+        # 还有另一处它挡不住：把 A2 改名为已存在的 A1 也是在写库时才炸，
+        # 那句提示在 apply_room 里，所以那条路径也要自己查一遍。
+        Index(
+            "uq_dorm_rooms_class_building_room",
+            "class_id",
+            "building",
+            "room_no",
+            unique=True,
+            sqlite_where=text("deleted_at IS NULL"),
         ),
     )
 

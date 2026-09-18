@@ -78,11 +78,37 @@ def test_capacity_cannot_drop_below_occupancy(client, db_session):
     assert response.status_code == 400, response.text
     error = response.json()["error"]
     assert error["code"] == "DORM_CAPACITY_BELOW_OCCUPIED"
-    assert "住了 3 个人" in error["message"]
-    assert "容量测试甲" in error["message"]  # 说清要搬谁
+    assert "住着 3 个人" in error["message"]
+    assert "容量测试丙" in error["message"]  # 说清要搬谁
 
     # 拒绝之后容量没变
     assert client.get(f"/api/v1/dorm_rooms/{room['id']}").json()["data"]["capacity"] == 4
+
+
+def test_capacity_cannot_hide_beds_that_are_beyond_it(client, db_session):
+    """容量调小必须按**最大床位号**判，不是按人数。
+
+    8 人间里只住了 5、6 号床两个人 → 容量改成 3 时，如果只看人数（2 ≤ 3）就会放过，
+    而看板只画 1..capacity 这些格子 —— 那两个人从此既不在看板上、也不在未分配名单里
+    （未分配按「有没有 student_id」判定，他们已经被判成「已就座」），看起来就是「人少了」。
+    """
+    class_id = _class_id(db_session)
+    room = _room(client, class_id, "207", capacity=8)
+    for bed_no, name in ((5, "高号床位甲"), (6, "高号床位乙")):
+        _student(db_session, name, f"D92{bed_no:02d}")
+        assert _bed(client, class_id, "207", bed_no, name).status_code == 201
+
+    response = client.patch(f"/api/v1/dorm_rooms/{room['id']}", json={"capacity": 3})
+    assert response.status_code == 400, response.text
+    error = response.json()["error"]
+    assert error["code"] == "DORM_CAPACITY_BELOW_OCCUPIED"
+    assert "超过" in error["message"] and "高号床位甲" in error["message"]
+    assert error["detail"]["beyond"] == [5, 6]
+
+    # 调到 6（住得下最大床位号）就能过
+    assert client.patch(f"/api/v1/dorm_rooms/{room['id']}", json={"capacity": 6}).status_code == 200
+    beds = [bed for bed in _tree(client, class_id)["rooms"] if bed["roomNo"] == "207"][0]["beds"]
+    assert [bed["studentName"] for bed in beds if bed["studentName"]] == ["高号床位甲", "高号床位乙"]
 
 
 def test_capacity_out_of_range_is_rejected(client, db_session):
@@ -218,8 +244,12 @@ def test_import_preview_reports_unparseable_bed(client, db_session):
     assert row["issues"][0]["field"] == "bed_no"
 
 
-def test_import_two_rows_same_bed_stops_the_batch(client, db_session):
-    """两行指到同一个床位 → 整批回滚并告诉你那个床位住的是谁（不写半批数据）。"""
+def test_import_two_rows_same_bed_is_caught_in_the_preview(client, db_session):
+    """两行指到同一个床位（「1号床」与「01」）→ **预览阶段**就认成重复并跳过第 2 行。
+
+    判重键是（房间, 床位号），而床位号在预览解析时已经归一化成整数，所以这两种写法
+    是同一个床位。原先按学生姓名判重，两行都显示正常、提交时才整批回滚 —— 老师白填一次。
+    """
     class_id = _class_id(db_session)
     _student(db_session, "同床导入甲", "D9109")
     _student(db_session, "同床导入乙", "D9110")
@@ -230,18 +260,22 @@ def test_import_two_rows_same_bed_stops_the_batch(client, db_session):
         params={"table": "dorm_beds"},
         files={"file": ("d.csv", csv_text.encode("utf-8"), "text/csv")},
     ).json()["data"]
-    values = [row["values"] for row in preview["rows"]]
+    assert preview["summary"]["problem"] == 1, preview
+    assert "重复" in preview["rows"][1]["issues"][0]["message"]
 
-    response = client.post(
+    values = [row["values"] for row in preview["rows"]]
+    committed = client.post(
         "/api/v1/transfer/import/commit",
         params={"table": "dorm_beds", "classId": class_id},
         json={"rows": values},
-    )
-    assert response.status_code == 400, response.text
-    assert "已经住了" in response.json()["error"]["message"]
+    ).json()["data"]
+    assert committed["created"] == 1
+    assert committed["skippedCount"] == 1
 
-    # 一条都没写进去
-    assert client.get("/api/v1/dorm_beds", params={"classId": class_id}).json()["meta"]["total"] == 0
+    rows = client.get("/api/v1/dorm_beds", params={"classId": class_id}).json()["data"]
+    assert len(rows) == 1
+    assert rows[0]["student_name"] == "同床导入甲"
+    assert rows[0]["bed_no"] == 1
 
 
 # ---------- 编辑与腾空 ----------
@@ -287,7 +321,7 @@ def test_deleting_a_bed_frees_the_slot(client, db_session):
     assert client.delete(f"/api/v1/dorm_beds/{bed['id']}").status_code == 200
     after = client.get("/api/v1/dorm_beds", params={"classId": class_id}).json()
     assert after["meta"]["total"] == 0
-    assert "deleted_at" not in after["data"][0] if after["data"] else True
+    assert after["data"] == []
 
     # 同一个床位可以再分配给别人
     again = _bed(client, class_id, "307", 1, "删除床位乙")
@@ -403,3 +437,66 @@ def test_unknown_student_is_reported_not_guessed(client, db_session):
     response = _bed(client, class_id, "403", 1, "宿舍查无此人")
     assert response.status_code == 400
     assert "宿舍查无此人" in response.json()["error"]["message"]
+
+
+# ---------- 软删除与唯一约束（评审实测的两条 500） ----------
+
+
+def test_room_can_be_recreated_after_deletion(client, db_session):
+    """删掉一间房之后再建同楼栋同房号的房 —— 必须能建。
+
+    房间是软删除的，而 (class_id, building, room_no) 原来是普通唯一约束，
+    幽灵行占着键：再建一间直接撞约束报 500（出口被自己堵死）。
+    现在它是**部分**唯一索引，只约束未删除的房间。
+    """
+    class_id = _class_id(db_session)
+    room = _room(client, class_id, "900")
+    assert client.delete(f"/api/v1/dorm_rooms/{room['id']}").status_code == 200
+
+    again = client.post(
+        "/api/v1/dorm_rooms",
+        json={"building": "1号楼", "room_no": "900", "capacity": 4},
+        params={"classId": class_id},
+    )
+    assert again.status_code == 201, again.text
+    assert again.json()["data"]["capacity"] == 4
+
+
+def test_renaming_a_room_into_a_taken_number_is_refused(client, db_session):
+    """把 A2 改成已存在的 A1 → 一句说得清的话，而不是写库时才炸的唯一约束。"""
+    class_id = _class_id(db_session)
+    _room(client, class_id, "A1")
+    second = _room(client, class_id, "A2")
+
+    response = client.patch(f"/api/v1/dorm_rooms/{second['id']}", json={"room_no": "A1"})
+    assert response.status_code == 400, response.text
+    assert "已经在这份名单里" in response.json()["error"]["message"]
+
+    # 改成没被占的房号则正常
+    assert client.patch(f"/api/v1/dorm_rooms/{second['id']}", json={"room_no": "A3"}).status_code == 200
+
+
+def test_room_with_occupants_cannot_be_deleted(client, db_session):
+    """里面还住着人时不能删房间 —— 删了那间房的人会从所有视图里消失。
+
+    房间软删除、床位不跟着删，看板按房间画、未分配名单按「有没有 student_id」判定，
+    两边都看不到他；想给他排到别处还会撞同名房间的唯一索引报 500（评审实测）。
+    """
+    class_id = _class_id(db_session)
+    room = _room(client, class_id, "C1", capacity=4)
+    _student(db_session, "删房测试甲", "D9301")
+    assert _bed(client, class_id, "C1", 1, "删房测试甲").status_code == 201
+
+    response = client.delete(f"/api/v1/dorm_rooms/{room['id']}")
+    assert response.status_code == 400, response.text
+    assert "还住着 1 个人" in response.json()["error"]["message"]
+    assert "删房测试甲" in response.json()["error"]["message"]
+
+    # 房间里的人还在看板上
+    board = [item for item in _tree(client, class_id)["rooms"] if item["roomNo"] == "C1"][0]
+    assert board["beds"][0]["studentName"] == "删房测试甲"
+
+    # 腾空之后就能删了
+    bed_id = board["beds"][0]["bedId"]
+    assert client.delete(f"/api/v1/dorm_beds/{bed_id}").status_code == 200
+    assert client.delete(f"/api/v1/dorm_rooms/{room['id']}").status_code == 200

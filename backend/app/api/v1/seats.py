@@ -15,16 +15,8 @@ from app.db.engine import get_session
 from app.schemas.registry import SEAT
 from app.services.class_scope import resolve_class_id
 from app.services.params import as_int
-from app.services.seat_service import (
-    board,
-    clear_seats,
-    get_plan,
-    randomize,
-    restore,
-    set_plan,
-    shift,
-    swap,
-)
+from app.services.seat_plan import get_plan, restore, set_plan
+from app.services.seat_service import board, clear_seats, randomize, shift, swap
 
 router = APIRouter(prefix="/seats", tags=["座位安排"])
 

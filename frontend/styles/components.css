@@ -482,7 +482,10 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
+  /* 手机上这条是主要点击目标：给到 36px（其余看板的格子是 46px，这里是紧凑排布，
+     36 是能点准又不至于把一间房的 7 天撑得太高的值） */
+  min-height: 36px;
+  padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--ice-50);
@@ -493,3 +496,26 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .duty-who { font-weight: 600; color: var(--ink-800); }
 .duty-who.orphan { color: var(--rose-600); }
 .duty-task { color: var(--ink-500); }
+
+
+/* ---------- 打印：座位表 ---------- */
+/* 旧应用打印出来的是整个页面（侧栏、按钮都在），座位表本身也没有分页控制。
+   这里至少把外壳藏掉、把格子变成不会断行的实线框 —— 老师打印的是给学生看的那张表。 */
+@media print {
+  .sidebar, .topbar, .toolbar, .kpi-row, .pager, .toasts, .modal-mask,
+  .nav-group, #menu-btn, #scrim { display: none !important; }
+  .content { padding: 0; max-width: none; }
+  .board { border: 0; padding: 0; margin: 0 0 10px; }
+  .board-head .btn { display: none; }
+  .seat-unseated, .board-note { display: none; }
+  .seat-grid { border-spacing: 2px; }
+  .seat-cell {
+    min-height: 34px;
+    border: 1px solid #999 !important;
+    background: none !important;
+    box-shadow: none !important;
+    color: #000;
+  }
+  .seat-cell.empty { border-style: solid !important; color: #bbb; }
+  .seat-podium { border: 1px solid #999; background: none; }
+}

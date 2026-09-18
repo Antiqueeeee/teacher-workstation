@@ -94,37 +94,68 @@ def apply_room(values: dict[str, Any], session: Session, row: Any = None) -> Non
                 f"容量要在 1–{MAX_CAPACITY} 之间（一间宿舍住 {MAX_CAPACITY} 人以上多半是填错了）",
                 detail={"field": "capacity", "value": values.get("capacity")},
             )
-        if row is not None and capacity < row.occupied:
-            occupants = "、".join(
-                f"{bed.bed_no} 号床 {bed.student_name or '（空）'}"
-                for bed in row.beds
-                if bed.student_id is not None
-            )
-            raise ApiError(
-                DORM_CAPACITY_BELOW_OCCUPIED,
-                f"这间现在住了 {row.occupied} 个人（{occupants}），"
-                f"容量不能改成 {capacity}。请先把床位腾出来，或先把人搬到别的房间。",
-                detail={"occupied": row.occupied, "capacity": capacity},
-            )
+        if row is not None:
+            # **按最大床位号判**，不是按人数：看板只画 1..capacity 这些格子，
+            # 只看人数的话「8 人间里只住了 5、6 号床两个人 → 容量改成 3」会成功，
+            # 而那两个人从此不在看板上、也不在未分配名单里 —— 看起来就是「人少了」
+            # （评审实测）。这条检查同时覆盖人数那种情形：床位号 1,2,3 改成容量 2 时
+            # 最大床位号 3 > 2，一样被拦下。
+            occupied = [bed for bed in row.beds if bed.student_id is not None]
+            beyond = [bed for bed in occupied if bed.bed_no > capacity]
+            if beyond:
+                names = "、".join(f"{bed.bed_no} 号床 {bed.student_name or '（空）'}" for bed in beyond)
+                raise ApiError(
+                    DORM_CAPACITY_BELOW_OCCUPIED,
+                    f"这间住着 {len(occupied)} 个人，其中 {names} 的床位号超过了 {capacity}。"
+                    f"容量不能改成 {capacity} —— 那样这几个人会从宿舍分布里消失。"
+                    "请先把他们的床位挪到前面的床位号，或把容量调大一些。",
+                    detail={
+                        "occupied": len(occupied),
+                        "capacity": capacity,
+                        "beyond": [bed.bed_no for bed in beyond],
+                    },
+                )
         values["capacity"] = capacity
 
-    if row is None:
-        # 新建房间时同一楼栋同房号不能重复 —— 旧应用允许重复，于是同一个房间
-        # 在界面上被拆成两张卡，容量各自算各自的
-        clash = session.scalars(
-            select(DormRoom).where(
-                DormRoom.deleted_at.is_(None),
-                DormRoom.class_id == values.get("class_id"),
-                DormRoom.building == values.get("building", ""),
-                DormRoom.room_no == room_no,
-            )
-        ).first()
-        if clash is not None:
-            raise ApiError(
-                INVALID_VALUE,
-                f"「{clash.label}」已经在这份名单里了，请直接编辑那一间（不用新建）",
-                detail={"field": "room_no", "roomId": clash.id},
-            )
+    # 同一楼栋同房号不能重复 —— 旧应用允许重复，于是同一个房间在界面上被拆成两张卡，
+    # 容量各自算各自的。**新建与改名都要查**：只在新建时查的话，把 A2 改成已存在的 A1
+    # 会一路写下去，最后撞数据库唯一索引报 500（评审实测）。
+    clash = session.scalars(
+        select(DormRoom).where(
+            DormRoom.deleted_at.is_(None),
+            # 更新时 class_id 会被写入管线摘掉（不允许改班级），所以要从行上取
+            DormRoom.class_id == (values.get("class_id") or (row.class_id if row else None)),
+            DormRoom.building == values.get("building", getattr(row, "building", "") if row else ""),
+            DormRoom.room_no == room_no,
+            DormRoom.id != (row.id if row is not None and row.id else 0),
+        )
+    ).first()
+    if clash is not None:
+        raise ApiError(
+            INVALID_VALUE,
+            f"「{clash.label}」已经在这份名单里了，请直接"
+            + ("改成另一个房号（同一个房间不需要建两条）" if row is not None else "编辑那一间（不用新建）"),
+            detail={"field": "room_no", "roomId": clash.id},
+        )
+
+
+def apply_room_delete(session: Session, row: Any) -> None:
+    """删房间之前先看里面有没有人 —— 有就拒绝，并列出是谁。
+
+    房间是软删除、床位不跟着删，于是「删掉房间」会让那间房的人**从所有视图里消失**
+    （看板按房间画、未分配名单按「有没有 student_id」判定，两边都看不到他），
+    想给他排到别处还会因为同名房间撞唯一索引报 500（评审实测）。
+    所以这里挡住：腾空或搬走之后才允许删房间。
+    """
+    occupied = [bed for bed in row.beds if bed.student_id is not None]
+    if occupied:
+        names = "、".join(f"{bed.bed_no} 号床 {bed.student_name or '（未知）'}" for bed in occupied)
+        raise ApiError(
+            INVALID_VALUE,
+            f"「{row.label}」里还住着 {len(occupied)} 个人（{names}），不能直接删。"
+            "请先把床位腾空，或把人搬到别的房间。",
+            detail={"roomId": row.id, "occupied": len(occupied)},
+        )
 
 
 def resolve_room(session: Session, class_id: int, building: str, room_no: str) -> DormRoom:
@@ -211,7 +242,7 @@ def apply_bed(values: dict[str, Any], session: Session, row: Any = None) -> None
         )
     values["bed_no"] = bed_no
 
-    student = _resolve_student(session, values, row, class_id)
+    student = resolve_student(session, values, row, class_id)
     if student is not None:
         values["student_id"] = student.id
         values["student_name"] = student.name
@@ -263,7 +294,7 @@ def apply_bed(values: dict[str, Any], session: Session, row: Any = None) -> None
             )
 
 
-def _resolve_student(
+def resolve_student(
     session: Session,
     values: dict[str, Any],
     row: Any,
@@ -271,6 +302,7 @@ def _resolve_student(
     *,
     required_message: str | None = None,
 ) -> Student | None:
+    """按姓名（优先）或学号找学生（床位与值日共用 —— 两处的解析规则必须一致）。"""
     """按姓名（优先）或学号找学生；**空床位不落库**（界面上自动显示为空位）。
 
     查无此人/重名的处理与别处一致：**明确报错，不猜**（`services/roster.py` 的规矩）。
@@ -400,166 +432,3 @@ def unassigned_boarders(session: Session, class_id: int) -> list[dict[str, Any]]
         for student in boarders
         if student.id not in seated
     ]
-
-
-def require_room(session: Session, class_id: int, building: str, room_no: str) -> DormRoom:
-    """值日安排里的房间**必须已经存在**（与床位不同：床位导入时会把房间建出来）。
-
-    理由：一条指向不存在宿舍的值日安排没有任何意义，而旧应用的下拉只是复制了一份
-    选项、不校验，于是这种记录能造出来（`:13947`）。床位那边是「先有房间再住人」的
-    自然顺序，这里反过来 —— 值日是为已有房间排的。
-    """
-    room_no = str(room_no or "").strip()
-    if not room_no:
-        raise ApiError(INVALID_VALUE, "房号必填", detail={"field": "room_no"})
-
-    query = select(DormRoom).where(
-        DormRoom.deleted_at.is_(None), DormRoom.class_id == class_id, DormRoom.room_no == room_no
-    )
-    building = str(building or "").strip()
-    if building:
-        query = query.where(DormRoom.building == building)
-    matches = list(session.scalars(query))
-
-    if not matches:
-        raise ApiError(
-            INVALID_VALUE,
-            f"宿舍分布里没有「{room_no}」这间房。请先到「宿舍分布」把它加进去，再排值日。",
-            detail={"field": "room_no", "value": room_no},
-        )
-    if len(matches) > 1:
-        buildings = "、".join(sorted(room.building or "（无楼栋）" for room in matches))
-        raise ApiError(
-            INVALID_VALUE,
-            f"房号「{room_no}」在 {buildings} 里都有，请填上楼栋",
-            detail={"field": "building", "roomNo": room_no},
-        )
-    return matches[0]
-
-
-def apply_duty(values: dict[str, Any], session: Session, row: Any = None) -> None:
-    """值日的保存前钩子：房间与学生都解析成引用，星期转成序号。
-
-    `weekday` 是**输入用的虚拟字段**（老师填汉字），落库的是 `weekday_no`；
-    与床位的 `building`/`room_no` 同一套做法，用完必须摘掉。
-    """
-    class_id = values.get("class_id") or (getattr(row, "class_id", None) if row else None)
-    if not class_id:
-        raise ApiError(INVALID_VALUE, "缺少班级，无法确定这条值日属于哪个班")
-
-    raw_weekday = values.get("weekday") or (getattr(row, "weekday", None) if row else None)
-    number = weekday_number(raw_weekday)
-    if number is None:
-        raise ApiError(
-            INVALID_VALUE,
-            f"认不出的星期「{raw_weekday}」，只能是{'、'.join(WEEKDAYS)}",
-            detail={"field": "weekday", "value": raw_weekday},
-        )
-    values["weekday"] = WEEKDAYS[number - 1]
-    values["weekday_no"] = number  # 排序用（汉字排序是按码位，星期几会乱）
-
-    building = str(values.get("building") or (row.building if row else "") or "").strip()
-    room_no = str(values.get("room_no") or (row.room_no if row else "") or "").strip()
-    room = require_room(session, class_id, building, room_no)
-    values["room_id"] = room.id
-    values["class_id"] = class_id
-
-    task = values.get("task")
-    if task not in (None, "") and str(task).strip() not in DUTY_TASKS:
-        raise ApiError(
-            INVALID_VALUE,
-            f"认不出的值日任务「{task}」，只能是{'、'.join(DUTY_TASKS)}",
-            detail={"field": "task"},
-        )
-
-    student = _resolve_student(
-        session,
-        values,
-        row,
-        class_id,
-        required_message="必须填值日学生（姓名或学号）—— 一条不知道谁值日的安排没有意义",
-    )
-    if student is not None:
-        values["student_id"] = student.id
-        values["student_name"] = student.name
-
-    # 这几个是输入用的虚拟字段（不是 DormDuty 的列，见床位那段同样的问题）
-    for key in ("building", "room_no", "sno"):
-        values.pop(key, None)
-
-
-def duty_board(session: Session, class_id: int) -> dict[str, Any]:
-    """值日看板：**按房间分组**，每间房列出 7 天各自的安排。
-
-    分组必须在服务端做：旧应用是前端把整表拉下来再分组，一旦记录多到分页，
-    分组结果就会缺一部分而界面上看不出来。
-    """
-    rooms = list(
-        session.scalars(
-            select(DormRoom)
-            .where(DormRoom.deleted_at.is_(None), DormRoom.class_id == class_id)
-            .order_by(DormRoom.building, DormRoom.room_no)
-        )
-    )
-    duties = session.scalars(
-        select(DormDuty).where(DormDuty.class_id == class_id, DormDuty.deleted_at.is_(None))
-    ).all()
-
-    by_room: dict[int, list[DormDuty]] = {}
-    for duty in duties:
-        by_room.setdefault(duty.room_id, []).append(duty)
-
-    payload = []
-    for room in rooms:
-        items = sorted(by_room.get(room.id, []), key=lambda duty: (duty.weekday_no, duty.id))
-        days = {duty.weekday_no: [] for duty in items}
-        for duty in items:
-            days[duty.weekday_no].append(
-                {
-                    "id": duty.id,
-                    "weekday": duty.weekday,
-                    "weekdayNo": duty.weekday_no,
-                    "studentId": duty.student_id,
-                    "studentName": duty.student_name,
-                    "sno": duty.sno,
-                    "task": duty.task,
-                    "checker": duty.checker,
-                    "result": duty.result,
-                    "note": duty.note,
-                    "orphan": duty.orphan,
-                }
-            )
-        payload.append(
-            {
-                "roomId": room.id,
-                "label": room.label,
-                "building": room.building,
-                "roomNo": room.room_no,
-                "capacity": room.capacity,
-                "occupied": room.occupied,
-                "days": [
-                    {"weekday": weekday_label(number), "weekdayNo": number, "items": days.get(number, [])}
-                    for number in range(1, len(WEEKDAYS) + 1)
-                ],
-                "count": len(items),
-            }
-        )
-
-    # 提到了但已经不在宿舍分布里的房间（房间被删了）——如实列出来，别让记录静默消失
-    known = {room.id for room in rooms}
-    orphan_rooms = sorted(
-        {
-            (duty.room_label or "（房间已删除）")
-            for duty in duties
-            if duty.room_id not in known
-        }
-    )
-    return {
-        "classId": class_id,
-        "rooms": payload,
-        "weekdays": list(WEEKDAYS),
-        "tasks": list(DUTY_TASKS),
-        "results": list(DUTY_RESULTS),
-        "total": len(duties),
-        "orphanRooms": orphan_rooms,
-    }
