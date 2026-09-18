@@ -65,6 +65,7 @@ class TableSpec:
     default_sort: tuple[str, int] = ("id", -1)  # (列, 方向) 方向 1=升序 -1=降序
     class_scoped: bool = True                  # 是否属于某个班级
     soft_delete: bool = True
+    dedupe_keys: tuple[str, ...] = ()          # 导入时的「判重键」：同键视为同一条记录，跳过而不是重复插入
     extra_keys: tuple[str, ...] = field(default_factory=tuple)  # 输出里额外带的列
 
     @property
@@ -123,6 +124,7 @@ TODO = TableSpec(
     search_keys=("content", "note"),
     filter_keys=("priority", "done"),
     default_sort=("id", -1),
+    dedupe_keys=("content", "due_date"),  # 同内容 + 同截止日视为同一条，重复导入不会翻倍
 )
 
 RULE = TableSpec(
@@ -149,6 +151,7 @@ RULE = TableSpec(
     search_keys=("title", "content"),
     filter_keys=("category",),
     default_sort=("id", -1),
+    dedupe_keys=("category", "title"),  # 同类同标题视为同一条班规
 )
 
 TEMPLATE = TableSpec(
@@ -172,6 +175,7 @@ TEMPLATE = TableSpec(
     filter_keys=("category",),
     default_sort=("id", -1),
     class_scoped=False,  # 话术模板是全班共享的素材，不属于某个班级
+    dedupe_keys=("title",),  # 同标题视为同一条模板
 )
 
 TABLES: dict[str, TableSpec] = {spec.key: spec for spec in (TODO, RULE, TEMPLATE)}

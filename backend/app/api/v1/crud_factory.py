@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Request
@@ -24,7 +23,6 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.errors import (
-    CLASS_ID_REQUIRED,
     FIELD_REQUIRED,
     INVALID_VALUE,
     NOT_FOUND,
@@ -33,15 +31,10 @@ from app.api.errors import (
 )
 from app.db.base import utcnow
 from app.db.engine import get_session
-from app.models.class_ import Class
 from app.schemas.common import page_meta, resolve_paging, serialize
 from app.schemas.registry import FieldSpec, TableSpec
-
-# 前端传字符串的布尔写法（表单 / Excel 导入都会遇到）
-TRUE_WORDS = {"1", "true", "True", "是", "已完成", "已缴"}
-FALSE_WORDS = {"0", "false", "False", "否", "未完成", "未缴", ""}
-DATE_FORMATS = ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y年%m月%d日")
-
+from app.services.class_scope import resolve_class_id
+from app.services.field_value import CODE_MISSING_REQUIRED, parse_value
 
 # --------------------------------------------------------------------------- 校验
 
@@ -53,69 +46,24 @@ def _as_int(raw: Any, label: str) -> int:
         raise ApiError(INVALID_VALUE, f"「{label}」需要是整数", detail={"value": raw}) from None
 
 
-def _as_bool(raw: Any, label: str) -> bool:
-    if isinstance(raw, bool):
-        return raw
-    if isinstance(raw, (int, float)):
-        return bool(raw)
-    text = str(raw).strip()
-    if text in TRUE_WORDS:
-        return True
-    if text in FALSE_WORDS:
-        return False
-    raise ApiError(INVALID_VALUE, f"「{label}」只能是是/否", detail={"value": raw})
-
-
-def _as_date(raw: Any, label: str) -> date | None:
-    if raw in ("", None):
+def _short(raw: Any) -> str | None:
+    if raw is None:
         return None
-    if isinstance(raw, datetime):
-        return raw.date()
-    if isinstance(raw, date):
-        return raw
-    text = str(raw).strip()
-    for fmt in DATE_FORMATS:
-        try:
-            return datetime.strptime(text, fmt).date()
-        except ValueError:
-            continue
-    raise ApiError(INVALID_VALUE, f"「{label}」日期格式不正确（应为 2026-09-01）", detail={"value": text})
+    text = str(raw)
+    return text if len(text) <= 100 else text[:100] + "…"
 
 
 def coerce(field: FieldSpec, raw: Any) -> Any:
-    """按声明把入参转成模型能存的值；不合法就抛带中文说明的 ApiError。"""
-    if field.type == "checkbox":
-        return _as_bool(raw, field.label)
+    """按声明解析入参；不合法就抛带中文说明的 ApiError。
 
-    if field.type == "number":
-        if raw in ("", None):
-            if field.required:
-                raise ApiError(FIELD_REQUIRED, f"「{field.label}」是必填项", detail={"field": field.k})
-            return None
-        try:
-            return int(str(raw).strip())
-        except (TypeError, ValueError):
-            raise ApiError(
-                INVALID_VALUE, f"「{field.label}」需要是数字", detail={"field": field.k, "value": raw}
-            ) from None
-
-    if field.type == "date":
-        value = _as_date(raw, field.label)
-        if value is None and field.required:
-            raise ApiError(FIELD_REQUIRED, f"「{field.label}」是必填项", detail={"field": field.k})
+    真正的语义在 `services/field_value.py` —— **Excel 导入走的是同一份实现**。
+    两边各写一遍的话，「同一个字段在两条路上理解不一致」是迟早的事。
+    """
+    value, issue = parse_value(field, raw)
+    if issue is None:
         return value
-
-    # text / textarea / select
-    text = "" if raw is None else str(raw).strip()
-    if not text and field.required:
-        raise ApiError(FIELD_REQUIRED, f"「{field.label}」是必填项", detail={"field": field.k})
-    if text and field.options and text not in field.options:
-        raise ApiError(
-            INVALID_VALUE,
-            f"「{field.label}」只能选：{'、'.join(field.options)}",
-            detail={"field": field.k, "value": text},
-        )
-    return text
+    code = FIELD_REQUIRED if issue.code == CODE_MISSING_REQUIRED else INVALID_VALUE
+    raise ApiError(code, issue.message, detail={"field": field.k, "value": _short(raw)})
 
 
 def normalize(spec: TableSpec, payload: dict[str, Any], *, partial: bool) -> dict[str, Any]:
@@ -151,23 +99,10 @@ def normalize(spec: TableSpec, payload: dict[str, Any], *, partial: bool) -> dic
 def _resolve_class_id(spec: TableSpec, raw: Any, session: Session) -> int | None:
     """确定本次操作属于哪个班级。
 
-    单班场景下不需要前端传 `classId`（老师自己部署，通常就一个班）；
-    多班且未指定时明确报错，而不是静默写错班。
+    实现只有一份，在 `services/class_scope.py` —— 导入接口用的是同一个函数。
+    两个入口各写一遍「该写进哪个班」是迟早要不一致的那类规则。
     """
-    if not spec.class_scoped:
-        return None
-    if raw not in ("", None):
-        class_id = _as_int(raw, "classId")
-        if session.get(Class, class_id) is None:
-            raise ApiError(INVALID_VALUE, "指定的班级不存在", detail={"classId": class_id})
-        return class_id
-
-    ids = list(session.scalars(select(Class.id).where(Class.deleted_at.is_(None))))
-    if not ids:
-        raise ApiError(CLASS_ID_REQUIRED, "还没有班级，请先创建班级", status=409)
-    if len(ids) > 1:
-        raise ApiError(CLASS_ID_REQUIRED, "存在多个班级，请指定 classId", status=409)
-    return ids[0]
+    return resolve_class_id(spec, raw, session)
 
 
 def _truthy(raw: str) -> bool:

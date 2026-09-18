@@ -10,3 +10,4 @@ pydantic>=2.7,<3.0
 openpyxl>=3.1
 pillow>=10.0
 mutagen>=1.47
+python-multipart>=0.0.9
