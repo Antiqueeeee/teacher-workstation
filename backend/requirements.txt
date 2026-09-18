@@ -1,0 +1,12 @@
+# 后端运行依赖（安装：pip install -r backend/requirements.txt）
+# 与 pyproject.toml 的 [project.dependencies] 保持一致。
+# 注意：部署环境离线，交付时需用 pip download / pip wheel 预先拉全量轮子。
+
+fastapi>=0.115,<1.0
+uvicorn>=0.30
+sqlalchemy>=2.0,<3.0
+alembic>=1.13
+pydantic>=2.7,<3.0
+openpyxl>=3.1
+pillow>=10.0
+mutagen>=1.47

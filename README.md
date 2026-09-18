@@ -46,24 +46,27 @@
 
 - ✅ 设计与决策完成（6 份文档）
 - ✅ 仓库初始化、开发约定、目录骨架
-- ⬜ 开发环境（Python 3.11 专用环境 + 后端依赖）
-- ⬜ 阶段 1：数据模型 / 通用 CRUD / 导入基础设施 / 前端 core 层 / 3 个试点页
+- ✅ 开发环境：后端依赖装齐（Python 3.11）
+- ✅ 后端地基：配置 / 模型 / Alembic 迁移 / 通用 CRUD 工厂 / 统一错误封套；3 张试点表（待办、班规、话术模板）已跑通，**10 个测试通过**
+- ⬜ 阶段 1 余下：导入基础设施 + 演示夹具装载 → 前端 core 层 → 3 个试点页
+- ⬜ 后续：学生档案等核心表、媒体库、移动端适配、一键启动包（已推迟）
 
 ## 快速开始
 
 ```bash
-# 1. 建环境（专用环境，别和装了 torch/FunASR 的那个混用）
-conda create -n teacher-workstation python=3.11 -y
-conda activate teacher-workstation
-pip install -e backend[dev]
+# 1. 装依赖（用仓库里的 .validation/conda，Python 3.11）
+../.validation/conda/python.exe -m pip install -r backend/requirements-dev.txt
 
-# 2. 起服务
+# 2. 起服务（手机与电脑都通过内网地址访问）
 cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8723 --reload
-# → 手机或电脑访问 http://<本机内网IP>:8723/
+PYTHONPATH=. ../.validation/conda/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8723 --reload
+# → http://<本机内网IP>:8723/
 
-# 3. 提交前检查
+# 3. 跑测试
+PYTHONPATH=. ../.validation/conda/python.exe -m pytest -q
+
+# 4. 提交前检查行数
 python tools/check_file_size.py
 ```
 
-> 业务代码尚未开始写，上面的命令在阶段 1 完成后才能跑通。
+首次启动会自动建目录、跑迁移，并创建一个**空的**默认班级（不是演示数据）。

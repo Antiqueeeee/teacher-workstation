@@ -80,6 +80,8 @@ teacher-workstation/
 - 迁移脚本要向前兼容（优先加列，避免破坏性改列），方便回滚。
 - **金额以「分」存整数**；时间字段统一类型，不要混用字符串与日期。
 - 学生关联一律用 `student_id`，`name` 只作冗余展示列；学号唯一约束是 `(class_id, sno)`。
+- **数据库地址只在 `app/config.py` 定义一处**，`alembic.ini` 不重复配置（由 `env.py` 覆盖），避免迁移和运行时连到两个不同的库。
+- **`alembic.ini` 这类被 `configparser` 读取的配置文件必须纯 ASCII** —— Windows 中文环境下它按 GBK 解码，一旦写入中文注释，所有 Alembic 命令会直接崩（这个坑已经踩过一次，见提交记录）。
 
 ---
 
@@ -119,12 +121,23 @@ chore: 初始化仓库与开发约定
 ## 9. 本地怎么跑
 
 ```bash
-# 后端（开发模式；手机与电脑都通过内网地址访问）
-cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8723 --reload
-# → 手机或电脑访问 http://<本机内网IP>:8723/
+# 1. 装依赖（本仓库用 .validation/conda，Python 3.11）
+../.validation/conda/python.exe -m pip install -r backend/requirements-dev.txt
 
-# 前端无构建步骤，由后端静态托管，无需单独起服务
+# 2. 起服务（开发模式：热重载；手机与电脑都通过内网地址访问）
+cd backend
+PYTHONPATH=. ../.validation/conda/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8723 --reload
+# → http://<本机内网IP>:8723/
+
+# 3. 跑测试
+PYTHONPATH=. ../.validation/conda/python.exe -m pytest -q
+
+# 4. 提交前检查行数
+python tools/check_file_size.py
 ```
 
-> 数据目录默认在 `backend/data/`（不入库）。环境尚未安装，见根 `README.md` 的「当前状态」。
+- 首次启动会自动建目录、跑数据库迁移，并创建一个**空的**默认班级（不是演示数据）。
+- 数据目录默认 `backend/data/`（已 gitignore）。
+- 前端无构建步骤，由后端静态托管，不用单独起服务。
+- 数据库结构变更：先改模型并在 `app/models/__init__.py` 里导出，然后
+  `cd backend && alembic revision --autogenerate -m "..."`，**检查生成的脚本**再 `alembic upgrade head`。
