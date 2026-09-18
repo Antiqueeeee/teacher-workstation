@@ -59,6 +59,8 @@ BUSINESS_TABLES = (
     "scores",
     "exam_subjects",
     "exams",
+    "seats",
+    "seat_plans",
     "dorm_beds",
     "dorm_rooms",
     "attendance",
@@ -70,6 +72,10 @@ BUSINESS_TABLES = (
     "templates",
     "students",
 )
+
+# 存在 `app_state` 里、但属于「业务数据」的键（每个班一份）。
+# 不清的话，上一个用例的座位快照会让下一个用例的「能回退吗」显示出错。
+BUSINESS_APP_STATE_KEYS = ("seat_snapshot:",)
 
 
 @pytest.fixture(autouse=True)
@@ -88,6 +94,10 @@ def clean_business_data(client):  # 依赖 client：确保表已经建好
     try:
         for table in BUSINESS_TABLES:
             session.execute(text(f"DELETE FROM {table}"))
+        for prefix in BUSINESS_APP_STATE_KEYS:
+            session.execute(
+                text("DELETE FROM app_state WHERE key LIKE :pattern"), {"pattern": f"{prefix}%"}
+            )
         session.commit()
     finally:
         session.close()

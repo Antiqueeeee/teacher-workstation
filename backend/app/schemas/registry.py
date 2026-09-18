@@ -22,6 +22,7 @@ from app.models.guardian import Guardian
 from app.models.homework import QUALITIES, RATE_MODES, SUBJECTS, Homework
 from app.models.rule import CATEGORIES as RULE_CATEGORIES
 from app.models.rule import Rule
+from app.models.seat import Seat
 from app.models.template import CATEGORIES as TEMPLATE_CATEGORIES
 from app.models.template import TONES as TEMPLATE_TONES
 from app.models.template import Template
@@ -30,6 +31,7 @@ from app.services.attendance_service import apply_attendance
 from app.services.dorm_service import apply_bed, apply_room
 from app.services.exam_service import apply_exam
 from app.services.guardian_service import link_student
+from app.services.seat_service import apply_seat
 from app.services.homework_service import apply_homework
 
 # 字段类型（与前端 field 渲染器一一对应）。
@@ -438,6 +440,48 @@ DORM_BED = TableSpec(
     before_save=apply_bed,
 )
 
+SEAT = TableSpec(
+    key="seats",
+    model=Seat,
+    title="座位安排",
+    entity="座位",
+    # 「组」由列决定（派生属性），所以不能声明为可排序/可筛选
+    columns=(
+        ColumnSpec("row", "排", w="62px", numeric=True),
+        ColumnSpec("col", "列", w="62px", numeric=True),
+        ColumnSpec("group", "组", w="72px", sortable=False),
+        ColumnSpec("student_name", "学生", w="96px"),
+        ColumnSpec("locked", "锁定", w="70px"),
+        ColumnSpec("note", "备注"),
+    ),
+    fields=(
+        FieldSpec("row", "第几排", type="number", required=True, hint="1 是最前面一排"),
+        FieldSpec("col", "第几列", type="number", required=True),
+        FieldSpec("student_name", "学生", hint="留空就是一个空座位"),
+        FieldSpec("sno", "学号", hint="姓名重名时用学号指定"),
+        FieldSpec(
+            "locked",
+            "锁定",
+            type="checkbox",
+            default=False,
+            hint="锁定的座位不参与随机排位与轮换",
+        ),
+        FieldSpec(
+            "note",
+            "备注",
+            type="textarea",
+            full=True,
+            hint="如：近视 500 度，需坐前排。随机排位不会清掉它",
+        ),
+    ),
+    search_keys=("student_name", "note"),
+    filter_keys=("locked",),
+    default_sort=("row", 1),
+    dedupe_keys=("row", "col"),  # 同一格重复导入不翻倍
+    extra_keys=("student_id", "position", "orphan"),
+    before_save=apply_seat,
+)
+
 GUARDIAN = TableSpec(
     key="guardians",
     model=Guardian,
@@ -477,7 +521,18 @@ GUARDIAN = TableSpec(
 
 TABLES: dict[str, TableSpec] = {
     spec.key: spec
-    for spec in (TODO, RULE, TEMPLATE, GUARDIAN, HOMEWORK, ATTENDANCE, EXAM, DORM_ROOM, DORM_BED)
+    for spec in (
+        TODO,
+        RULE,
+        TEMPLATE,
+        GUARDIAN,
+        HOMEWORK,
+        ATTENDANCE,
+        EXAM,
+        DORM_ROOM,
+        DORM_BED,
+        SEAT,
+    )
 }
 
 # 字段定义存在数据库里的表（学生档案）：spec 每次请求**现算**。

@@ -17,7 +17,9 @@ import { attendancePageDef } from './pages/attendance.js';
 import { dormsPageDef } from './pages/dorms.js';
 import { guardiansPageDef } from './pages/guardians.js';
 import { homeworkPageDef } from './pages/homework.js';
-import { scoresPageDef } from './pages/scores.js';import { rulesPageDef } from './pages/rules.js';
+import { rulesPageDef } from './pages/rules.js';
+import { scoresPageDef } from './pages/scores.js';
+import { seatsPageDef } from './pages/seats.js';
 import { studentsPageDef } from './pages/students.js';
 import { templatesPageDef } from './pages/templates.js';
 import { todosPageDef } from './pages/todos.js';
@@ -30,6 +32,7 @@ const PAGE_DEFS = [
   homeworkPageDef,
   scoresPageDef,
   dormsPageDef,
+  seatsPageDef,
   todosPageDef,
   rulesPageDef,
   templatesPageDef,

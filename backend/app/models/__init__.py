@@ -11,6 +11,7 @@ from app.models.exam import Exam, ExamSubject, Score
 from app.models.guardian import Guardian
 from app.models.homework import Homework, HomeworkUnsubmitted
 from app.models.rule import Rule
+from app.models.seat import Seat, SeatPlan
 from app.models.student import Student, StudentFieldDef
 from app.models.template import Template
 from app.models.todo import Todo
@@ -27,6 +28,8 @@ __all__ = [
     "Homework",
     "HomeworkUnsubmitted",
     "Rule",
+    "Seat",
+    "SeatPlan",
     "Score",
     "Student",
     "StudentFieldDef",

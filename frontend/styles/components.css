@@ -411,3 +411,55 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .dorm-bed .dorm-bed-name { font-weight: 600; color: var(--ink-800); }
 .dorm-bed.orphan .dorm-bed-name { color: var(--rose-600); }
 .dorm-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+
+/* ---------- 座位表 ---------- */
+.seat-layout { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.seat-grid-wrap { flex: 1 1 420px; min-width: 0; overflow-x: auto; }
+.seat-podium {
+  margin: 0 auto 10px;
+  padding: 6px 0;
+  max-width: 320px;
+  border-radius: var(--r-sm);
+  background: var(--ink-100);
+  color: var(--ink-600);
+  text-align: center;
+  font-size: 12.5px;
+  letter-spacing: 4px;
+}
+.seat-grid { border-collapse: separate; border-spacing: 5px; }
+.seat-grid th { font-size: 11.5px; font-weight: 500; color: var(--ink-400); white-space: nowrap; }
+.seat-grid .seat-col-head { padding-bottom: 2px; }
+.seat-grid .seat-row-head { padding-right: 4px; text-align: right; }
+.seat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  min-width: 62px;
+  min-height: 46px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink-700);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.seat-cell:hover { border-color: var(--ice-400); }
+.seat-cell.empty { border-style: dashed; color: var(--ink-400); }
+.seat-cell.taken { background: var(--ice-50); }
+.seat-cell.picked { border-color: var(--ice-600); box-shadow: 0 0 0 2px var(--ice-200); }
+.seat-cell.locked { background: var(--sun-100); }
+.seat-cell.orphan { border-color: var(--rose-500); color: var(--rose-600); }
+.seat-cell .seat-name { font-weight: 600; color: var(--ink-800); }
+.seat-cell.empty .seat-name { font-weight: 400; }
+.seat-cell .seat-mark { font-size: 10px; color: var(--ink-400); }
+.seat-unseated {
+  flex: 0 1 190px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-content: flex-start;
+}
