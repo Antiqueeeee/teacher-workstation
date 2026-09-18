@@ -167,14 +167,15 @@ def parse_cells(raw: Any) -> list[CellInput]:
     return cells
 
 
-def save_cells(
-    session: Session, exam: Exam, class_id: int | None, cells: list[CellInput]
-) -> dict[str, int]:
+def save_cells(session: Session, exam: Exam, cells: list[CellInput]) -> dict[str, int]:
     """按格覆盖提交成绩。
 
     语义是**按格修改**（而不是整天覆盖）：老师填哪格就改哪格，
     没提到的格原样不动 —— 成绩表有几十行几十列，全量覆盖太容易因为界面没滚动到
     而把别的格子清掉。清空某一格用 `value=null, absent=false` 明确表达。
+
+    班级取自考试本身（`exam.class_id`），不接受客户端指定 ——
+    否则会出现「往 A 班的考试里写 B 班学生的成绩」。
     """
     full_map = exam_subject_map(session, exam.id)
     roster = {student.id: student for student in list_class_students(session, exam.class_id)}
@@ -273,6 +274,9 @@ def sheet_view(session: Session, exam: Exam) -> dict[str, Any]:
         "examDate": exam.date.isoformat(),
         "classId": exam.class_id,
         "subjects": subjects,
+        # 全部可选科目：界面上的「科目与满分」要能把删掉的科目加回来，
+        # 而前端不该自己维护一份词表（那就是两处描述同一件事）
+        "allSubjects": list(SUBJECTS),
         "students": [
             {
                 "studentId": student.id,

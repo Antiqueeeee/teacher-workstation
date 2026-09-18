@@ -16,6 +16,7 @@ import { getSpec, setRegistry } from './core/store.js';
 import { attendancePageDef } from './pages/attendance.js';
 import { guardiansPageDef } from './pages/guardians.js';
 import { homeworkPageDef } from './pages/homework.js';
+import { scoresPageDef } from './pages/scores.js';
 import { rulesPageDef } from './pages/rules.js';
 import { studentsPageDef } from './pages/students.js';
 import { templatesPageDef } from './pages/templates.js';
@@ -27,6 +28,7 @@ const PAGE_DEFS = [
   guardiansPageDef,
   attendancePageDef,
   homeworkPageDef,
+  scoresPageDef,
   todosPageDef,
   rulesPageDef,
   templatesPageDef,

@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.models.class_ import Class
 from app.models.exam import Score
 from app.models.student import Student
+from app.models.vocab import SUBJECTS
 
 
 def _class_id(session) -> int:
@@ -78,6 +79,20 @@ def test_new_exam_gets_all_subjects_with_default_full_marks(client, db_session):
     assert len(full) == 9  # 词表里的 9 科，老师再按实际删减
     assert full["语文"] == 150 and full["数学"] == 150 and full["英语"] == 150
     assert full["地理"] == 100
+
+
+def test_sheet_lists_all_selectable_subjects(client, db_session):
+    """录入表要一并给出**全部可选科目**：界面上的「科目与满分」靠它把删掉的科目加回来。
+
+    前端不自己维护一份科目词表 —— 这里少一个字段，那边就只能硬编码，
+    然后两份词表迟早对不上（「作业里能选地理、成绩里选不到」就是这么来的）。
+    """
+    exam = _exam(client, _class_id(db_session), name="可选科目测试", date="2026-06-20")
+    assert _subjects(client, exam["id"], [("语文", 150)]).status_code == 200
+
+    sheet = client.get(f"/api/v1/exams/{exam['id']}/sheet").json()["data"]
+    assert sheet["allSubjects"] == list(SUBJECTS)
+    assert [item["subject"] for item in sheet["subjects"]] == ["语文"]
 
 
 def test_pass_line_uses_this_exam_subjects_only(client, db_session):

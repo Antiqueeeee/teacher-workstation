@@ -51,7 +51,7 @@ def put_sheet(
     """按格提交成绩：只改传过来的格子，没提到的格原样不动。"""
     exam = get_exam(session, exam_id)
     cells = parse_cells(body.get("cells"))
-    changes = save_cells(session, exam, body.get("classId"), cells)
+    changes = save_cells(session, exam, cells)
     return {"ok": True, "data": {"changes": changes, **sheet_view(session, exam)}}
 
 

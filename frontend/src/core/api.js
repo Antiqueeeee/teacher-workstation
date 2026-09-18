@@ -103,6 +103,17 @@ export const api = {
     request('/attendance/day', { method: 'PUT', body: payload }).then((p) => p.data),
   attendanceSummary: (from, to, classId) =>
     request('/attendance/summary', { params: { from, to, classId } }).then((p) => p.data),
+
+  /** 成绩：录入表与报表。
+   *  名次、及格率、得分率全部由后端算 —— 界面这层不自己数、也不自己排。 */
+  scoreSheet: (examId) => request(`/exams/${examId}/sheet`).then((p) => p.data),
+  saveScoreSheet: (examId, cells) =>
+    request(`/exams/${examId}/sheet`, { method: 'PUT', body: { cells } }).then((p) => p.data),
+  scoreReport: (examId) => request(`/exams/${examId}/report`).then((p) => p.data),
+  saveExamSubjects: (examId, subjects) =>
+    request(`/exams/${examId}/subjects`, { method: 'PUT', body: { subjects } }).then((p) => p.data),
+  clearExamScores: (examId) =>
+    request(`/exams/${examId}/clear-scores`, { method: 'POST' }).then((p) => p.data),
 };
 
 /** 触发浏览器下载（同源 GET，直接给 <a download> 点一下）。 */

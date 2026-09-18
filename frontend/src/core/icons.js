@@ -16,6 +16,8 @@ const PATHS = {
     '<path d="M7.5 3.5h5v2.5h-5z"/><path d="M7.5 4.5h-2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-10a1 1 0 0 0-1-1h-2"/><path d="M7.5 9.5h5M7.5 12.5h3.5"/>',
   calendar:
     '<path d="M6.5 4v2.5M13.5 4v2.5"/><path d="M4.5 6h11v9.5h-11z"/><path d="M4.5 9.2h11"/>',
+  chart:
+    '<path d="M4 4v12h12"/><path d="M7 13V8.5M10.5 13V6M14 13v-3"/>',
   edit: '<path d="M4 16h4l9-9-4-4-9 9z"/>',
   trash: '<path d="M5 7h10M9 7V5h2v2M7 7l1 10h4l1-10"/>',
   plus: '<path d="M10 4v12M4 10h12"/>',
