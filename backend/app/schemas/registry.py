@@ -17,6 +17,7 @@ from app.db.base import Base
 from app.models.rule import CATEGORIES as RULE_CATEGORIES
 from app.models.rule import Rule
 from app.models.template import CATEGORIES as TEMPLATE_CATEGORIES
+from app.models.template import TONES as TEMPLATE_TONES
 from app.models.template import Template
 from app.models.todo import PRIORITIES, Todo
 
@@ -162,17 +163,19 @@ TEMPLATE = TableSpec(
     columns=(
         ColumnSpec("title", "标题"),
         ColumnSpec("category", "场景", w="100px"),
+        ColumnSpec("tone", "语气", w="100px"),
         ColumnSpec("use_count", "使用次数", w="90px", numeric=True),
         ColumnSpec("content", "内容"),
     ),
     fields=(
         FieldSpec("title", "标题", required=True),
-        FieldSpec("category", "场景", type="select", options=TEMPLATE_CATEGORIES, default="其他"),
+        FieldSpec("category", "场景", type="select", options=TEMPLATE_CATEGORIES),
+        FieldSpec("tone", "语气", type="select", options=TEMPLATE_TONES),
         FieldSpec("content", "内容", type="textarea", full=True, required=True),
         FieldSpec("use_count", "使用次数", type="number", default=0, editable=False),
     ),
     search_keys=("title", "content"),
-    filter_keys=("category",),
+    filter_keys=("category", "tone"),
     default_sort=("id", -1),
     class_scoped=False,  # 话术模板是全班共享的素材，不属于某个班级
     dedupe_keys=("title",),  # 同标题视为同一条模板

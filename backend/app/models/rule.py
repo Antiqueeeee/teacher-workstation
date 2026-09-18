@@ -2,6 +2,9 @@
 
 在旧应用的基础上加了 `version` / `effective_from` / `effective_to` ——
 原来只有「更新日期」，无法回答「这条规矩当时是否有效」。
+
+`CATEGORIES` 用的是**旧应用里真实在用的词表**（它的 select 选项 + 默认值），
+不是我另编一套：词表对不上，老师手里已有的表格一条都导不进来。
 """
 
 from __future__ import annotations
@@ -13,7 +16,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin
 
-CATEGORIES = ("考勤", "课堂", "作业", "卫生", "纪律", "仪容", "宿舍", "其他")
+# 与旧应用 :9684 一致
+CATEGORIES = (
+    "考勤纪律",
+    "课堂纪律",
+    "学习管理",
+    "卫生值日",
+    "宿舍管理",
+    "文明礼仪",
+    "安全规范",
+    "激励条款",
+)
 
 
 class Rule(Base, TimestampMixin, SoftDeleteMixin):

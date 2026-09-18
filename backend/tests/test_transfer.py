@@ -113,8 +113,24 @@ def test_commit_then_reimport_is_idempotent(client):
 
 
 def test_import_into_global_table_needs_no_class(client):
-    rows = [{"title": "成绩下滑沟通", "category": "家长沟通", "content": "您好，最近注意到……"}]
+    # category / tone 的取值必须是**产品真实词表**里的（见 models/template.py 顶部说明）
+    rows = [
+        {
+            "title": "成绩下滑沟通",
+            "category": "成绩关心",
+            "tone": "关切鼓励",
+            "content": "您好，最近注意到……",
+        }
+    ]
     assert _commit(client, "templates", rows).json()["data"]["created"] == 1
+
+
+def test_select_outside_real_vocabulary_is_rejected(client):
+    """词表之外的取值必须被挡住 —— 否则「家长沟通」这种自造场景会悄悄混进数据。"""
+    rows = [{"title": "自己编的场景", "category": "家长沟通", "content": "x"}]
+    response = _commit(client, "templates", rows)
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "ROW_VALIDATION_FAILED"
 
 
 # ---------------------------------------------------------------------------
