@@ -13,6 +13,7 @@ import { errorCard } from './core/errors.js';
 import { icon } from './core/icons.js';
 import { currentKey, register, setDefault, start } from './core/router.js';
 import { getSpec, setRegistry } from './core/store.js';
+import { attendancePageDef } from './pages/attendance.js';
 import { guardiansPageDef } from './pages/guardians.js';
 import { homeworkPageDef } from './pages/homework.js';
 import { rulesPageDef } from './pages/rules.js';
@@ -24,6 +25,7 @@ import { todosPageDef } from './pages/todos.js';
 const PAGE_DEFS = [
   studentsPageDef,
   guardiansPageDef,
+  attendancePageDef,
   homeworkPageDef,
   todosPageDef,
   rulesPageDef,

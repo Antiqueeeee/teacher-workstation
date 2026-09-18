@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, FastAPI
 
+from app.api.v1.attendance_day import router as attendance_day_router
 from app.api.v1.crud_factory import build_router
 from app.api.v1.export import router as export_router
 from app.api.v1.student_fields import router as student_fields_router
@@ -37,6 +38,8 @@ def registry() -> dict:
 
 # 字面路径先挂：/students/fields 不能被 /students/{row_id} 先匹配掉
 router.include_router(student_fields_router)
+# 同理：/attendance/day、/attendance/summary 必须先于 /attendance/{row_id}
+router.include_router(attendance_day_router)
 
 # 静态表：声明写死在注册表里，这里直接生成路由
 for _spec in TABLES.values():

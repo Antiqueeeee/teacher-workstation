@@ -28,7 +28,7 @@ function filterOptions(field) {
   return [];
 }
 
-function toolbarHtml(spec, state) {
+function toolbarHtml(spec, state, actions) {
   const filters = spec.filterKeys
     .map((key) => {
       const field = spec.fields.find((item) => item.k === key);
@@ -48,18 +48,32 @@ function toolbarHtml(spec, state) {
     })
     .join('');
 
+  const actionButtons = actions
+    .map(
+      (action) =>
+        `<button class="btn${action.primary ? ' btn-primary' : ''}" type="button" data-page-action="${esc(action.name)}">${icon(action.iconName || 'check', 16)} ${esc(action.label)}</button>`,
+    )
+    .join('');
+  // 页面自己带主操作（如出勤的「点名」）时，「新增」退成次要按钮，避免两个蓝按钮打架
+  const newClass = actions.some((action) => action.primary) ? 'btn' : 'btn-primary';
+
   return `
     <div class="toolbar">
       <input class="input search" type="search" placeholder="搜索…" value="${esc(state.q)}" data-search>
       ${filters}
-      <button class="btn btn-primary" type="button" data-new>${icon('plus', 16)} 新增</button>
+      ${actionButtons}
+      <button class="btn ${newClass}" type="button" data-new>${icon('plus', 16)} 新增</button>
       <button class="btn" type="button" data-import>${icon('import', 16)} 导入</button>
       <button class="btn" type="button" data-export>${icon('export', 16)} 导出</button>
       <a class="btn" href="${api.templateUrl(spec.key)}" download title="下载导入模板">${icon('template', 16)} 模板</a>
-      <label class="checkbox-row" title="删除的记录会保留在库里，勾选后才能看到并恢复">
+      ${
+        spec.softDelete
+          ? `<label class="checkbox-row" title="删除的记录会保留在库里，勾选后才能看到并恢复">
         <input type="checkbox" data-show-deleted${state.includeDeleted ? ' checked' : ''}>
         <span class="muted">显示已删除</span>
-      </label>
+      </label>`
+          : ''
+      }
     </div>`;
 }
 
@@ -194,13 +208,36 @@ function listHtml(spec, rows, meta, state) {
 
 /* ---------------------------------------------------------------- 页面工厂 */
 
-export function createCrudPage({ specKey, spec, group, iconName = 'list' }) {
+export function createCrudPage({
+  specKey,
+  spec,
+  group,
+  iconName = 'list',
+  actions = [],
+  panel = null,
+}) {
   if (!spec) throw new Error(`页面 ${specKey} 找不到对应的表声明：注册表里没有 ${specKey}`);
 
   const state = getListState(spec);
   let rowsById = new Map();
+  // 当前页面的根节点：render 时还没有，bind 之后才有。
+  // 看板要能自己触发重绘，所以按需取，而不是在 render 时捕获一个还不存在的节点
+  let host = null;
 
   const params = () => toParams(state);
+  const context = () => ({ spec, state, params, refresh });
+
+  /** 重绘看板区（如果有）—— 点名存完要让出勤率立刻更新，而不是等用户手动刷新 */
+  async function refreshPanel() {
+    if (!panel || !host) return;
+    const area = host.querySelector('[data-panel]');
+    if (area) area.innerHTML = await panel.html(context());
+  }
+
+  async function refresh() {
+    await refreshPanel();
+    if (host) await refreshList(host);
+  }
 
   async function loadStats() {
     try {
@@ -231,6 +268,8 @@ export function createCrudPage({ specKey, spec, group, iconName = 'list' }) {
 
   function bindEvents(root) {
     let timer = null;
+    host = root;
+    if (panel?.bind) panel.bind(root, context());
 
     root.addEventListener('input', (event) => {
       if (!event.target.matches('[data-search]')) return;
@@ -285,14 +324,23 @@ export function createCrudPage({ specKey, spec, group, iconName = 'list' }) {
 
       if (target.closest('[data-new]')) {
         const saved = await openForm(spec);
-        if (saved) refreshList(root);
+        if (saved) refresh();
+        return;
+      }
+
+      // 注意选择器是 data-page-action 而不是 data-action：
+      // 错误卡片上的「重试」按钮用的是 data-action，两者混用会让重试按钮点了没反应
+      const actionButton = target.closest('[data-page-action]');
+      if (actionButton) {
+        const action = actions.find((item) => item.name === actionButton.dataset.pageAction);
+        if (action) await action.run(context());
         return;
       }
 
       const edit = target.closest('[data-edit]');
       if (edit) {
         const saved = await openForm(spec, rowsById.get(edit.dataset.edit));
-        if (saved) refreshList(root);
+        if (saved) refresh();
         return;
       }
 
@@ -312,15 +360,16 @@ export function createCrudPage({ specKey, spec, group, iconName = 'list' }) {
       if (del) {
         const row = rowsById.get(del.dataset.del);
         const label = text(row?.[spec.columns[0].k]);
-        const yes = await confirmBox(
-          `确定删除「${esc(label)}」吗？删除后记录仍留在库里，勾选工具栏的「显示已删除」可以恢复。`,
-          { okText: '删除', danger: true },
-        );
+        // 文案必须与真实行为一致：软删除才说「可以找回」
+        const message = spec.softDelete
+          ? `确定删除「${esc(label)}」吗？删除后记录仍留在库里，勾选工具栏的「显示已删除」可以恢复。`
+          : `确定删除「${esc(label)}」吗？这条记录会被<strong>彻底删掉</strong>，不能恢复。`;
+        const yes = await confirmBox(message, { okText: '删除', danger: true });
         if (!yes) return;
         try {
           await api.remove(spec.key, del.dataset.del);
-          toast('已删除，可在「显示已删除」里恢复');
-          refreshList(root);
+          toast(spec.softDelete ? '已删除，可在「显示已删除」里恢复' : '已删除');
+          refresh();
         } catch (error) {
           toast(error.message, 'err', 6000);
         }
@@ -345,12 +394,18 @@ export function createCrudPage({ specKey, spec, group, iconName = 'list' }) {
     icon: iconName,
     title: spec.title,
     async render() {
-      const [list, stats] = await Promise.all([api.list(spec.key, params()), loadStats()]);
+      const [list, stats, panelHtml] = await Promise.all([
+        api.list(spec.key, params()),
+        loadStats(),
+        // 看板初始内容与列表一起取：两处显示的必须是同一时刻的数据
+        panel ? panel.html(context()) : Promise.resolve(''),
+      ]);
       rowsById = new Map(list.rows.map((row) => [String(row.id), row]));
       return {
         html: `
           <div data-kpi>${kpiHtml(spec, stats)}</div>
-          ${toolbarHtml(spec, state)}
+          ${panelHtml ? `<div data-panel>${panelHtml}</div>` : ''}
+          ${toolbarHtml(spec, state, actions)}
           <div data-list>${listHtml(spec, list.rows, list.meta, state)}</div>`,
         bind: (root) => bindEvents(root),
       };

@@ -102,3 +102,30 @@ def test_class_scoped_flag_matches_model(spec):
     assert spec.class_scoped == has_class_id, (
         f"class_scoped={spec.class_scoped}，但模型{'有' if has_class_id else '没有'} class_id"
     )
+
+
+def test_registry_payload_carries_what_the_frontend_needs():
+    """`/meta/registry` 是前端的唯一配置来源，键名就是前后端的契约。
+
+    少一个键，前端是**静默**降级：比如少了 `softDelete`，删除确认框会对一张
+    不软删除的表承诺「记录还在库里、可以恢复」——文案与真实行为不符，
+    而这种错误没有任何测试会抓到（因为它们本来就不该靠人眼发现）。
+    """
+    spec_keys = {
+        "key", "title", "entity", "classScoped", "softDelete",
+        "columns", "fields", "filterKeys", "searchKeys", "defaultSort",
+    }
+    column_keys = {"k", "label", "w", "numeric", "sortable"}
+    field_keys = {
+        "k", "label", "type", "required", "options", "default",
+        "full", "hint", "editable", "aliases",
+    }
+    for spec in SPECS:
+        payload = spec.to_dict()
+        assert spec_keys <= set(payload), f"{spec.key} 的输出少了 {spec_keys - set(payload)}"
+        assert payload["key"] == spec.key
+        assert payload["defaultSort"] == {"k": spec.default_sort[0], "dir": spec.default_sort[1]}
+        for column in payload["columns"]:
+            assert column_keys <= set(column), f"{spec.key}.{column.get('k')} 的列声明不完整"
+        for field in payload["fields"]:
+            assert field_keys <= set(field), f"{spec.key}.{field.get('k')} 的字段声明不完整"

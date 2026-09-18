@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from app.db.base import Base
+from app.models.attendance import ATTENDANCE_TYPES, FOLLOW_UP_STATES, PERIODS, Attendance
 from app.models.guardian import ROLES as GUARDIAN_ROLES
 from app.models.guardian import Guardian
 from app.models.homework import QUALITIES, RATE_MODES, SUBJECTS, Homework
@@ -23,6 +24,7 @@ from app.models.template import CATEGORIES as TEMPLATE_CATEGORIES
 from app.models.template import TONES as TEMPLATE_TONES
 from app.models.template import Template
 from app.models.todo import PRIORITIES, Todo
+from app.services.attendance_service import apply_attendance
 from app.services.guardian_service import link_student
 from app.services.homework_service import apply_homework
 
@@ -116,6 +118,9 @@ class TableSpec:
             "title": self.title,
             "entity": self.entity,
             "classScoped": self.class_scoped,
+            # 前端要靠它决定「删除确认框怎么说」：能恢复的表说「可以找回」，
+            # 不能恢复的表必须说清是彻底删掉（说反了就是骗人）
+            "softDelete": self.soft_delete,
             "defaultSort": {"k": self.default_sort[0], "dir": self.default_sort[1]},
             "columns": [asdict(column) for column in self.columns],
             "fields": [asdict(field_spec) for field_spec in self.fields],
@@ -251,6 +256,60 @@ HOMEWORK = TableSpec(
     before_save=apply_homework,
 )
 
+ATTENDANCE = TableSpec(
+    key="attendance",
+    model=Attendance,
+    title="出勤记录",
+    entity="考勤记录",
+    columns=(
+        ColumnSpec("date", "日期", w="104px", numeric=True),
+        ColumnSpec("student_name", "学生", w="92px"),
+        ColumnSpec("type", "类型", w="70px"),
+        ColumnSpec("period", "节次", w="92px"),
+        ColumnSpec("reason", "事由"),
+        ColumnSpec("handled", "跟进状态", w="92px"),
+        ColumnSpec("handled_note", "处理情况"),
+    ),
+    fields=(
+        FieldSpec("date", "日期", type="date", required=True),
+        # 与家长通讯同一套做法：填姓名，钩子解析成 student_id，重名时明确报错
+        FieldSpec("student_name", "学生", required=True, hint="填学生姓名；重名时会提示确认"),
+        FieldSpec("type", "类型", type="select", options=ATTENDANCE_TYPES, required=True),
+        FieldSpec(
+            "period",
+            "节次",
+            type="select",
+            options=PERIODS,
+            default="全天",
+            hint="只作留档，不参与统计",
+        ),
+        FieldSpec("reason", "事由", type="textarea", full=True, hint="如：发热就医、家中有事"),
+        FieldSpec(
+            "handled",
+            "跟进状态",
+            type="select",
+            options=FOLLOW_UP_STATES,
+            hint="留空按类型自动判定：旷课为「待联系」，其余为「无需联系」",
+        ),
+        FieldSpec(
+            "handled_note",
+            "处理情况",
+            type="textarea",
+            full=True,
+            hint="如：已电话联系家长确认",
+        ),
+    ),
+    search_keys=("student_name", "reason", "handled_note"),
+    filter_keys=("type", "period", "handled"),
+    default_sort=("date", -1),
+    # 刻意不软删除：UNIQUE(date, student_id) 与软删除冲突 —— 删掉的记录仍占着唯一键，
+    # 同一天同一个学生就再也登记不进来（见 models/attendance.py）
+    soft_delete=False,
+    dedupe_keys=("date", "student_name"),  # 一天一个学生只有一条，重复导入不翻倍
+    extra_keys=("student_id",),            # 点名表要按学生 id 匹配
+    before_save=apply_attendance,
+)
+
 GUARDIAN = TableSpec(
     key="guardians",
     model=Guardian,
@@ -289,7 +348,7 @@ GUARDIAN = TableSpec(
 )
 
 TABLES: dict[str, TableSpec] = {
-    spec.key: spec for spec in (TODO, RULE, TEMPLATE, GUARDIAN, HOMEWORK)
+    spec.key: spec for spec in (TODO, RULE, TEMPLATE, GUARDIAN, HOMEWORK, ATTENDANCE)
 }
 
 # 字段定义存在数据库里的表（学生档案）：spec 每次请求**现算**。

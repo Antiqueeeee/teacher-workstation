@@ -78,3 +78,17 @@ def count_class_students(session: Session, class_id: int) -> int:
             Student.class_id == class_id, Student.deleted_at.is_(None)
         )
     ) or 0
+
+
+def list_class_students(session: Session, class_id: int) -> list[Student]:
+    """全班学生（未删除），按学号、再按姓名排序 —— 点名表要一份稳定的顺序。
+
+    排序键里带上 id：学号一样（或都为空）时，顺序仍然稳定，不会每次刷新换排列。
+    """
+    return list(
+        session.scalars(
+            select(Student)
+            .where(Student.class_id == class_id, Student.deleted_at.is_(None))
+            .order_by(Student.sno, Student.name, Student.id)
+        )
+    )

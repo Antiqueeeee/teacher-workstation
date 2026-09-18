@@ -18,6 +18,28 @@ export function dateText(value) {
   return String(value).slice(0, 10);
 }
 
+/**
+ * 今天的本地日期（ISO）。
+ *
+ * **不能用 `toISOString().slice(0,10)`**：那是 UTC，东八区晚上 8 点之后会算成「明天」，
+ * 于是老师晚上点的名记到了第二天。
+ */
+export function todayISO() {
+  return isoOf(new Date());
+}
+
+/** ISO 日期加减天数（按本地日历天算，跨月跨年由 Date 处理）。 */
+export function shiftDay(iso, days) {
+  const [year, month, day] = String(iso).split('-').map(Number);
+  return isoOf(new Date(year, month - 1, day + days));
+}
+
+function isoOf(value) {
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${value.getFullYear()}-${month}-${day}`;
+}
+
 export function boolText(value) {
   return value ? '是' : '否';
 }

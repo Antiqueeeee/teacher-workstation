@@ -94,6 +94,15 @@ export const api = {
   /** 导出/模板直接用链接下载 —— 让浏览器处理文件名与保存对话框，比 fetch 再造 Blob 稳。 */
   exportUrl: (table, params) => buildUrl(`/transfer/export/${table}.xlsx`, params).toString(),
   templateUrl: (table) => buildUrl(`/transfer/template/${table}.xlsx`).toString(),
+
+  /** 出勤：按天点名（整体提交）与区间小结。
+   *  出勤率一律由后端算 —— 界面这层只显示，不自己数记录条数（旧应用就是那么漂掉的）。 */
+  attendanceDay: (date, classId) =>
+    request('/attendance/day', { params: { date, classId } }).then((p) => p.data),
+  saveAttendanceDay: (payload) =>
+    request('/attendance/day', { method: 'PUT', body: payload }).then((p) => p.data),
+  attendanceSummary: (from, to, classId) =>
+    request('/attendance/summary', { params: { from, to, classId } }).then((p) => p.data),
 };
 
 /** 触发浏览器下载（同源 GET，直接给 <a download> 点一下）。 */

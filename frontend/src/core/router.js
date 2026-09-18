@@ -54,14 +54,20 @@ export async function render() {
   target.innerHTML = '<div class="empty">加载中…</div>';
   try {
     const result = await page.render();
-    target.innerHTML = result.html ?? '';
+    // 每次渲染都换一个**全新的容器**，事件绑在它上面。
+    // 复用 `#content` 会让每次切页都往上多叠一层监听器：旧页面的处理函数
+    // 会在新页面上继续响应，表现为「点『新增』弹出的是上一个页面的表单」，
+    // 而且切得越多叠得越多。容器一换，旧监听器随旧节点一起被丢掉。
+    const host = document.createElement('div');
+    host.innerHTML = result.html ?? '';
+    target.replaceChildren(host);
     if (typeof result.bind === 'function') {
       try {
-        result.bind(target);
+        result.bind(host);
       } catch (error) {
         // 绑定失败不掩盖：界面已经出来了，但按钮是死的，必须让用户知道
         console.error('页面事件绑定失败', error);
-        target.insertAdjacentHTML('afterbegin', errorCard(error));
+        host.insertAdjacentHTML('afterbegin', errorCard(error));
       }
     }
     document.title = `${page.title} · 班主任工作台`;

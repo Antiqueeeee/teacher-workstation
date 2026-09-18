@@ -4,6 +4,7 @@
 """
 
 from app.models.app_state import AppState
+from app.models.attendance import Attendance
 from app.models.class_ import Class
 from app.models.guardian import Guardian
 from app.models.homework import Homework, HomeworkUnsubmitted
@@ -14,6 +15,7 @@ from app.models.todo import Todo
 
 __all__ = [
     "AppState",
+    "Attendance",
     "Class",
     "Guardian",
     "Homework",
