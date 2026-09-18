@@ -361,3 +361,53 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 
 /* 看板里的简单清单（作业的手工提交率差异提醒等） */
 .plain-list { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.9; color: var(--ink-700); }
+
+/* ---------- 宿舍分布看板 ---------- */
+.dorm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.dorm-room {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.dorm-room-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dorm-room-head strong { font-size: 14px; color: var(--ink-800); }
+.dorm-room-head .btn { margin-left: auto; }
+.dorm-beds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 6px;
+  margin-bottom: 6px;
+}
+/* 床位格子本身就是按钮：点空格子加人、点有人格子改人 —— 手机上也有足够的点击面积 */
+.dorm-bed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 46px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--ice-50);
+  color: var(--ink-700);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.dorm-bed:hover { border-color: var(--ice-400); }
+.dorm-bed.empty { background: transparent; color: var(--ink-400); border-style: dashed; }
+.dorm-bed.orphan { background: var(--rose-100); border-color: var(--rose-500); color: var(--rose-600); }
+.dorm-bed .dorm-bed-no { font-size: 11px; color: var(--ink-400); }
+.dorm-bed .dorm-bed-name { font-weight: 600; color: var(--ink-800); }
+.dorm-bed.orphan .dorm-bed-name { color: var(--rose-600); }
+.dorm-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }

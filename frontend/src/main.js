@@ -14,10 +14,10 @@ import { icon } from './core/icons.js';
 import { currentKey, register, setDefault, start } from './core/router.js';
 import { getSpec, setRegistry } from './core/store.js';
 import { attendancePageDef } from './pages/attendance.js';
+import { dormsPageDef } from './pages/dorms.js';
 import { guardiansPageDef } from './pages/guardians.js';
 import { homeworkPageDef } from './pages/homework.js';
-import { scoresPageDef } from './pages/scores.js';
-import { rulesPageDef } from './pages/rules.js';
+import { scoresPageDef } from './pages/scores.js';import { rulesPageDef } from './pages/rules.js';
 import { studentsPageDef } from './pages/students.js';
 import { templatesPageDef } from './pages/templates.js';
 import { todosPageDef } from './pages/todos.js';
@@ -29,6 +29,7 @@ const PAGE_DEFS = [
   attendancePageDef,
   homeworkPageDef,
   scoresPageDef,
+  dormsPageDef,
   todosPageDef,
   rulesPageDef,
   templatesPageDef,

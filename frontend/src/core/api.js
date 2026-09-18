@@ -104,6 +104,11 @@ export const api = {
   attendanceSummary: (from, to, classId) =>
     request('/attendance/summary', { params: { from, to, classId } }).then((p) => p.data),
 
+  /** 宿舍：看板视图（房间 + 床位占用 + 未分配住宿生）。
+   *  容量、床位占用都由后端算好，界面不自己数 —— 旧应用就是靠界面按 capacity 现算，
+   *  容量读错一次整间房就都错了。 */
+  dormTree: (classId) => request('/dorms/tree', { params: { classId } }).then((p) => p.data),
+
   /** 学生档案：同名/同学号冲突报告（学生档案页面顶部据此提示）。 */
   studentConflicts: (classId) =>
     request('/students/name-conflicts', { params: { classId } }).then((p) => p.data),

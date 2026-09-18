@@ -18,6 +18,8 @@ const PATHS = {
     '<path d="M6.5 4v2.5M13.5 4v2.5"/><path d="M4.5 6h11v9.5h-11z"/><path d="M4.5 9.2h11"/>',
   chart:
     '<path d="M4 4v12h12"/><path d="M7 13V8.5M10.5 13V6M14 13v-3"/>',
+  building:
+    '<path d="M4.5 16.5V5.5h7v11"/><path d="M11.5 9.5h4v7"/><path d="M6.5 8.5h3M6.5 11.5h3M6.5 14h3M13 12h1M13 14.5h1"/>',
   edit: '<path d="M4 16h4l9-9-4-4-9 9z"/>',
   trash: '<path d="M5 7h10M9 7V5h2v2M7 7l1 10h4l1-10"/>',
   plus: '<path d="M10 4v12M4 10h12"/>',
