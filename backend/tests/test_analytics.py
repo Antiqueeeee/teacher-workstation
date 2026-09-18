@@ -224,3 +224,89 @@ def test_followups_skip_contacted_absence(client, db_session):
 
     items = [item for item in _followups(client, class_id) if item["kind"] == "absent_uncontacted"]
     assert items == []
+
+
+# ---------- 代课简报 ----------
+
+
+def test_substitute_brief_gathers_the_days_situation(client, db_session):
+    """简报把「今天该知道的事」凑齐：考勤、体质、班委、值日、违纪、班规、座位。"""
+    class_id = _class_id(db_session)
+    student = _student(db_session, "简报学生甲", "H9011")
+    today = date.today().isoformat()
+
+    client.post(
+        "/api/v1/attendance",
+        json={"date": today, "student_name": student.name, "type": "病假"},
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/health_records",
+        json={"student_name": student.name, "type": "哮喘", "detail": "运动后易发作", "emergency": "用随身喷雾", "level": "需重点关注"},
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/cadres",
+        json={"student_name": student.name, "post": "班长"},
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/duty_groups",
+        json={"weekday": f"星期{'一二三四五六日'[date.today().isoweekday() - 1]}", "area": "教室地面", "members_text": student.name},
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/disciplines",
+        json={"date": today, "student_name": student.name, "type": "课堂纪律", "detail": "上课说话"},
+        params={"classId": class_id},
+    )
+    client.post("/api/v1/rules", json={"title": "上课不许吃东西", "content": "x"}, params={"classId": class_id})
+
+    brief = client.get(
+        "/api/v1/analytics/substitute", params={"date": today, "classId": class_id}
+    ).json()["data"]
+
+    assert brief["weekday"] == f"星期{'一二三四五六日'[date.today().isoweekday() - 1]}"
+    assert brief["attendance"]["absent"] == 1
+    assert brief["attendance"]["absentStudents"] == ["简报学生甲"]
+    assert brief["health"][0]["type"] == "哮喘"
+    assert brief["health"][0]["emergency"] == "用随身喷雾"
+    assert brief["cadres"][0]["post"] == "班长"
+    assert brief["duty"][0]["area"] == "教室地面"
+    assert brief["discipline"][0]["studentName"] == "简报学生甲"
+    assert brief["rules"][0]["title"] == "上课不许吃东西"
+    assert brief["seats"]["rows"] >= 1
+    # 缺的那一段如实说明（今日课表要等课程表模块）
+    assert brief["missingSections"]
+
+
+def test_substitute_brief_flags_an_unregistered_day(client, db_session):
+    """没登记考勤的那天要**明说**「缺席名单可能不准」，而不是假装全员出勤。"""
+    class_id = _class_id(db_session)
+    _student(db_session, "简报缺勤甲", "H9012")
+    brief = client.get(
+        "/api/v1/analytics/substitute",
+        params={"date": "2026-01-05", "classId": class_id},
+    ).json()["data"]
+    assert brief["attendance"]["registered"] is False
+    assert brief["attendance"]["rate"] is None
+
+
+def test_substitute_brief_only_lists_key_health_records(client, db_session):
+    """体质只列「需重点关注」的 —— 简报要短到能一眼看完，常规关注不进这一块。"""
+    class_id = _class_id(db_session)
+    urgent = _student(db_session, "简报体质甲", "H9013")
+    normal = _student(db_session, "简报体质乙", "H9014")
+    client.post(
+        "/api/v1/health_records",
+        json={"student_name": urgent.name, "type": "癫痫", "detail": "x", "emergency": "y", "level": "需重点关注"},
+        params={"classId": class_id},
+    )
+    client.post(
+        "/api/v1/health_records",
+        json={"student_name": normal.name, "type": "近视", "detail": "x", "emergency": "y", "level": "常规关注"},
+        params={"classId": class_id},
+    )
+
+    brief = client.get("/api/v1/analytics/substitute", params={"classId": class_id}).json()["data"]
+    assert [row["studentName"] for row in brief["health"]] == ["简报体质甲"]

@@ -236,3 +236,130 @@ def followups(session: Session, class_id: int, limit: int = 14) -> list[dict[str
     # 重的排前面；同权重按日期倒序（最近发生的先看）
     items.sort(key=lambda item: (-item["weight"], item["date"]), reverse=False)
     return items[: max(1, min(limit, 100))]
+
+
+def substitute_brief(session: Session, class_id: int, day: date) -> dict[str, Any]:
+    """代课/交接简报：某一天的班级情况，给临时来代的老师看。
+
+    **只汇总已有模块的数据**，不重新算：考勤来自 `attendance_rate`、座位来自 `seat_service`。
+    特殊体质排在最前面 —— 那是安全信息（发作怎么处理、打给谁），代课老师第一时间要知道。
+
+    还没做的一段是**今日课表**：那要等「课程表」模块落地（`course` + `schedule_slot`）。
+    这里如实说明缺了它，而不是留一块空白让人猜。
+    """
+    from app.models.classroom import Cadre, DutyGroup
+    from app.models.discipline import Discipline
+    from app.models.rule import Rule
+    from app.models.welfare import HealthRecord
+    from app.services.attendance_rate import day_summary
+    from app.services.seat_service import board as seat_board
+
+    day_attendance = day_summary(session, class_id, day)
+
+    health = list(
+        session.scalars(
+            select(HealthRecord)
+            .where(
+                HealthRecord.deleted_at.is_(None),
+                HealthRecord.class_id == class_id,
+                HealthRecord.level == "需重点关注",
+            )
+            .order_by(HealthRecord.id)
+        )
+    )
+
+    cadres = list(
+        session.scalars(
+            select(Cadre)
+            .where(Cadre.deleted_at.is_(None), Cadre.class_id == class_id)
+            .order_by(Cadre.id)
+        )
+    )
+
+    rules = list(
+        session.scalars(
+            select(Rule)
+            .where(Rule.deleted_at.is_(None), Rule.class_id == class_id)
+            .order_by(Rule.id)
+            .limit(6)
+        )
+    )
+
+    # 还没结案且程度不轻的违纪 —— 代课老师需要知道「这几个要多留意」
+    open_disciplines = list(
+        session.scalars(
+            select(Discipline)
+            .where(
+                Discipline.deleted_at.is_(None),
+                Discipline.class_id == class_id,
+                Discipline.status != "已结案",
+            )
+            .order_by(Discipline.date.desc())
+            .limit(6)
+        )
+    )
+
+    weekday_no = day.isoweekday()
+    duty = list(
+        session.scalars(
+            select(DutyGroup)
+            .where(
+                DutyGroup.deleted_at.is_(None),
+                DutyGroup.class_id == class_id,
+                DutyGroup.weekday_no == weekday_no,
+            )
+            .order_by(DutyGroup.id)
+        )
+    )
+
+    seats = seat_board(session, class_id)
+
+    return {
+        "date": day.isoformat(),
+        "weekday": f"星期{'一二三四五六日'[weekday_no - 1]}",
+        "attendance": day_attendance.to_dict(),
+        "health": [
+            {
+                "studentName": row.student_name,
+                "type": row.type,
+                "detail": row.detail,
+                "emergency": row.emergency,
+                "limit": row.limit_note,
+                "contact": row.contact,
+                "phone": row.phone,
+            }
+            for row in health
+        ],
+        "cadres": [
+            {"post": row.post, "studentName": row.student_name, "phone": row.phone} for row in cadres
+        ],
+        "rules": [
+            {"category": row.category, "title": row.title, "content": row.content} for row in rules
+        ],
+        "discipline": [
+            {
+                "studentName": row.student_name,
+                "date": row.date.isoformat(),
+                "type": row.type,
+                "level": row.level,
+                "status": row.status,
+            }
+            for row in open_disciplines
+        ],
+        "duty": [
+            {"area": row.area, "members": row.members_text, "leader": row.leader_name} for row in duty
+        ],
+        "seats": {
+            "rows": seats["rows"],
+            "cols": seats["cols"],
+            "grid": [
+                [
+                    {"row": cell["row"], "col": cell["col"], "studentName": cell["studentName"]}
+                    for cell in line
+                ]
+                for line in seats["grid"]
+            ],
+        },
+        # 如实说明缺了哪一段，而不是留一块空白让人猜
+        "missingSections": ["今日课表（要等「课程表」模块落地）"],
+    }

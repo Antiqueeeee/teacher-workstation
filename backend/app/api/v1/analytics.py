@@ -7,13 +7,16 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.db.engine import get_session
 from app.schemas.registry import CONTACT
-from app.services.analytics_service import followups, overview
+from app.services.analytics_service import followups, overview, substitute_brief
 from app.services.class_scope import resolve_class_id
+from app.services.params import as_date
 
 router = APIRouter(prefix="/analytics", tags=["首页与看板"])
 
@@ -36,3 +39,11 @@ def get_followups(request: Request, session: Session = Depends(get_session)):
     except ValueError:
         limit = 14
     return {"ok": True, "data": followups(session, _class_id(request, session), limit)}
+
+
+@router.get("/substitute")
+def get_substitute(request: Request, session: Session = Depends(get_session)):
+    """代课/交接简报：某一天的班级情况（考勤、体质、班委、班规、违纪、值日、座位图）。"""
+    params = request.query_params
+    day = as_date(params.get("date") or date.today().isoformat(), "date")
+    return {"ok": True, "data": substitute_brief(session, _class_id(request, session), day)}

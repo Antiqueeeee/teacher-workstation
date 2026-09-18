@@ -351,3 +351,28 @@
   background: var(--surface);
 }
 .fee-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+
+
+/* ---------- 代课简报 ---------- */
+.brief-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 15px; }
+.brief-block { margin-bottom: 16px; }
+.brief-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.brief-stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; }
+.brief-alert {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--beak-400);
+  border-radius: var(--r-sm);
+  background: var(--beak-100);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.brief-alert.danger { border-left-color: var(--rose-500); background: var(--rose-100); }
+.brief-seats td { min-width: 64px; text-align: center; }
+
+/* 打印简报：藏掉外壳与按钮，只留内容 */
+@media print {
+  .no-print, .sidebar, .topbar, .toolbar { display: none !important; }
+  .brief-alert { background: none; border-left: 2px solid #666; }
+  .brief-block { break-inside: avoid; }
+}

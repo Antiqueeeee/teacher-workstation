@@ -36,6 +36,7 @@ import { visitsPageDef } from './pages/visits.js';
 import { scoresPageDef } from './pages/scores.js';
 import { seatsPageDef } from './pages/seats.js';
 import { studentsPageDef } from './pages/students.js';
+import { substitutePage } from './pages/substitute.js';
 import { youthMembersPageDef } from './pages/youth_members.js';
 import { templatesPageDef } from './pages/templates.js';
 import { todosPageDef } from './pages/todos.js';
@@ -43,6 +44,7 @@ import { todosPageDef } from './pages/todos.js';
 // 顺序即侧栏顺序；分组由页面自己声明
 const PAGE_DEFS = [
   homePage,
+  substitutePage,
   studentsPageDef,
   guardiansPageDef,
   disciplinesPageDef,
