@@ -22,6 +22,14 @@ from typing import Any
 
 from app.schemas.specs.class_roles import CADRE, DUTY, YOUTH
 from app.schemas.specs.classroom import RULE, TEMPLATE, TODO
+from app.schemas.specs.communication import (
+    ACTIVITY,
+    CONFLICT,
+    EVENT,
+    MEETING,
+    TALK,
+    VISIT,
+)
 from app.schemas.specs.contact import CONTACT, GUARDIAN
 from app.schemas.specs.student_records import DISCIPLINE, GRANT, HEALTH
 from app.schemas.specs.dorm import DORM_BED, DORM_DUTY, DORM_ROOM, SEAT
@@ -52,6 +60,12 @@ __all__ = [
     "DISCIPLINE",
     "HEALTH",
     "GRANT",
+    "CONFLICT",
+    "EVENT",
+    "ACTIVITY",
+    "MEETING",
+    "TALK",
+    "VISIT",
     "TABLES",
     "DYNAMIC_TABLES",
     "get_spec",
@@ -80,6 +94,12 @@ TABLES: dict[str, TableSpec] = {
         DISCIPLINE,
         HEALTH,
         GRANT,
+        VISIT,
+        TALK,
+        MEETING,
+        ACTIVITY,
+        EVENT,
+        CONFLICT,
     )
 }
 

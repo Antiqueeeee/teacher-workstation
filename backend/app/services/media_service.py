@@ -17,31 +17,38 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.errors import INVALID_VALUE, NOT_FOUND, ApiError
-from app.models.contact import ContactLog
 from app.models.media import KIND_ORDER, MEDIA_KINDS, Media
 from app.storage import media_store
 from app.storage.media_store import MediaError
 
-# 归属表白名单：表名 → 模型。要挂附件的新模块在这里登记。
-OWNER_TABLES: dict[str, Any] = {
-    "contacts": ContactLog,
-}
-OWNER_LABELS = {"contacts": "家长联系记录"}
+def owner_spec(owner_table: str):
+    """哪张表能挂附件 —— **从注册表读**（表声明里的 `media_owner`），不在这里维护名单。
+
+    原先是一份手写的白名单，加一个模块就要记得改两处 —— 而漏改的表现是
+    「这个模块还不支持挂附件」，加模块的人得翻到媒体服务里才知道为什么。
+    """
+    from app.schemas.registry import get_spec  # 局部导入：注册表构建期不依赖本模块
+
+    spec = get_spec(owner_table)
+    if spec is None or not spec.media_owner:
+        raise ApiError(
+            INVALID_VALUE,
+            f"「{owner_table}」这个模块不支持挂附件",
+            detail={"field": "ownerTable"},
+        )
+    return spec
 
 
 def owner_label(owner_table: str) -> str:
-    return OWNER_LABELS.get(owner_table, owner_table)
+    try:
+        return owner_spec(owner_table).title
+    except ApiError:
+        return owner_table
 
 
 def _require_owner(session: Session, class_id: int, owner_table: str, owner_id: int):
-    model = OWNER_TABLES.get(owner_table)
-    if model is None:
-        raise ApiError(
-            INVALID_VALUE,
-            f"「{owner_table}」这个模块还不支持挂附件",
-            detail={"field": "ownerTable"},
-        )
-    owner = session.get(model, owner_id)
+    spec = owner_spec(owner_table)
+    owner = session.get(spec.model, owner_id)
     if owner is None or getattr(owner, "deleted_at", None) is not None:
         raise ApiError(
             NOT_FOUND,

@@ -18,14 +18,20 @@ import { dormDutyPageDef } from './pages/dorm-duty.js';
 import { contactsPageDef } from './pages/contacts.js';
 import { homePage } from './pages/home.js';
 import { cadresPageDef } from './pages/cadres.js';
+import { activitiesPageDef } from './pages/class_activities.js';
+import { eventsPageDef } from './pages/class_events.js';
+import { conflictsPageDef } from './pages/conflicts.js';
 import { dormsPageDef } from './pages/dorms.js';
 import { dutyGroupsPageDef } from './pages/duty_groups.js';
 import { grantsPageDef } from './pages/grants.js';
 import { guardiansPageDef } from './pages/guardians.js';
+import { meetingsPageDef } from './pages/meetings.js';
 import { healthRecordsPageDef } from './pages/health_records.js';
 import { homeworkPageDef } from './pages/homework.js';
 import { rulesPageDef } from './pages/rules.js';
 import { disciplinesPageDef } from './pages/disciplines.js';
+import { talksPageDef } from './pages/talks.js';
+import { visitsPageDef } from './pages/visits.js';
 import { scoresPageDef } from './pages/scores.js';
 import { seatsPageDef } from './pages/seats.js';
 import { studentsPageDef } from './pages/students.js';
@@ -42,6 +48,12 @@ const PAGE_DEFS = [
   healthRecordsPageDef,
   grantsPageDef,
   contactsPageDef,
+  visitsPageDef,
+  talksPageDef,
+  meetingsPageDef,
+  conflictsPageDef,
+  activitiesPageDef,
+  eventsPageDef,
   cadresPageDef,
   youthMembersPageDef,
   dutyGroupsPageDef,

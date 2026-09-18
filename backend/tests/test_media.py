@@ -182,7 +182,7 @@ def test_unknown_owner_table_is_refused(client, db_session):
         data={"ownerTable": "不存在表", "ownerId": "1", "classId": str(class_id)},
     )
     assert response.status_code == 400
-    assert "还不支持挂附件" in response.json()["error"]["message"]
+    assert "不支持挂附件" in response.json()["error"]["message"]
 
 
 # ---------- 列表与去重 ----------

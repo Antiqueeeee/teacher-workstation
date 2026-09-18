@@ -43,3 +43,16 @@ class SoftDeleteMixin:
     @property
     def is_deleted(self) -> bool:
         return self.deleted_at is not None
+
+
+class MediaAttachmentMixin:
+    """能挂附件的表共用：给「这条记录挂了几个附件」留一个位置。
+
+    值由媒体服务在序列化前批量填进来（`media_service.attach_counts`，一次分组查询）——
+    放在模型的 mixin 上，是为了让**七张沟通留档类表的属性写法一致**，
+    也让注册表的自洽检查认得出这个字段。
+    """
+
+    @property
+    def attachment_count(self) -> int:
+        return getattr(self, "_attachment_count", 0)

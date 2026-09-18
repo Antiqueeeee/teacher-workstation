@@ -7,6 +7,15 @@ from app.models.app_state import AppState
 from app.models.attendance import Attendance
 from app.models.class_ import Class
 from app.models.classroom import Cadre, DutyGroup, DutyMember, YouthMember
+from app.models.communication import (
+    ClassActivity,
+    ClassEvent,
+    Conflict,
+    ConflictParty,
+    Meeting,
+    Talk,
+    Visit,
+)
 from app.models.contact import ContactLog
 from app.models.dorm import DormBed, DormDuty, DormRoom
 from app.models.discipline import Discipline
@@ -27,6 +36,13 @@ __all__ = [
     "Class",
     "Cadre",
     "ContactLog",
+    "Visit",
+    "Talk",
+    "Meeting",
+    "ConflictParty",
+    "Conflict",
+    "ClassEvent",
+    "ClassActivity",
     "Discipline",
     "DormBed",
     "DormDuty",

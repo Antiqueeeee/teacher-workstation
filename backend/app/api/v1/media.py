@@ -94,10 +94,7 @@ def list_media(request: Request, session: Session = Depends(get_session)):
     owner_table = (params.get("ownerTable") or "").strip()
     owner_id = params.get("ownerId")
     if owner_table and owner_id:
-        if owner_table not in media_service.OWNER_TABLES:
-            raise ApiError(
-                INVALID_VALUE, f"「{owner_table}」这个模块还不支持挂附件", detail={"ownerTable": owner_table}
-            )
+        media_service.owner_spec(owner_table)  # 不在注册表里 / 没声明 media_owner 就报错
         try:
             owner_pk = int(owner_id)
         except ValueError:

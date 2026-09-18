@@ -23,7 +23,7 @@ from datetime import date
 from sqlalchemy import Boolean, Date, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, SoftDeleteMixin, TimestampMixin
+from app.db.base import Base, MediaAttachmentMixin, SoftDeleteMixin, TimestampMixin
 
 # 与旧应用一致（`CFG_CONTACTS` 的 filters）
 CHANNELS = ("电话", "微信", "面对面", "短信", "其他")
@@ -34,7 +34,7 @@ DIRECTIONS = ("去电", "来电", "面谈", "线上")
 RESULTS = ("已沟通", "未接通", "待再联系")
 
 
-class ContactLog(Base, TimestampMixin, SoftDeleteMixin):
+class ContactLog(Base, TimestampMixin, SoftDeleteMixin, MediaAttachmentMixin):
     __tablename__ = "contact_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)

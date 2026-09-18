@@ -121,6 +121,9 @@ class TableSpec:
         keys += [c.k for c in self.columns]
         keys += [f.k for f in self.fields if f.k not in {c.k for c in self.columns}]
         keys += [k for k in self.extra_keys if k not in keys]
+        if self.media_owner:
+            # 支持附件的表自动带上附件数 —— 加模块的人不必记得再声明一次
+            keys.append("attachment_count")
         if self.soft_delete:
             # 前端要靠它区分「已删除」并给出恢复入口（软删除不能没有出口）
             keys.append("deleted_at")
