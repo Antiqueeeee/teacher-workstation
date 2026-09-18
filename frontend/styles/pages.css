@@ -428,7 +428,7 @@
 .sec-title .bar { width: 3px; height: 14px; border-radius: 2px; background: var(--ice-500); }
 
 /* ---------- 课程卡 ---------- */
-.course-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.course-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 12px; }
 .course-card {
   display: grid; gap: 6px; padding: 13px 14px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
@@ -440,7 +440,7 @@
 .course-card-nums { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-600); }
 
 /* ---------- 课程详情里的班级块 ---------- */
-.course-class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.course-class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 12px; }
 .course-class-card {
   display: grid; gap: 6px; padding: 13px 14px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
@@ -473,7 +473,7 @@
 .exam-block .table-wrap { border: 1px solid var(--border); border-radius: var(--r); }
 
 /* ---------- 成绩生长曲线 ---------- */
-.growth-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.growth-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 10px; }
 .growth-card {
   padding: 10px 12px; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow-sm);
@@ -481,3 +481,14 @@
 .growth-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
 .growth-head strong { font-size: 13.5px; color: var(--ink-800); }
 .growth-head .muted { margin-left: auto; font-size: 11.5px; }
+
+/* ---------- 课程表（一周网格） ---------- */
+.week-grid th, .week-grid td { white-space: nowrap; }
+.week-grid .week-row-head {
+  text-align: right; font-weight: 500; color: var(--ink-500);
+  font-size: 12px; padding-right: 8px;
+}
+.week-cell { min-width: 92px; vertical-align: top; line-height: 1.5; }
+.week-cell strong { display: block; font-size: 13px; color: var(--ink-800); }
+.week-cell .muted { font-size: 11.5px; }
+.week-cell.empty { background: var(--ink-50); }

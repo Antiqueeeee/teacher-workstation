@@ -99,3 +99,30 @@ def test_substitute_brief_includes_todays_lessons(client, db_session):
     assert brief["todaySlots"][0]["subject"] == "数学"
     assert brief["todaySlots"][0]["teacher"] == "王老师"
     assert brief["missingSections"] == []  # 不再有缺的段
+
+
+def test_week_grid_puts_every_slot_in_its_cell(client, db_session):
+    """一周网格：行是节次、列是星期，**空位也在**（界面直接铺格子，不自己推断顺序）。
+
+    规则：「格子在哪」由后端算（`schedule_service.week_view`），
+    界面只负责显示 —— 星期与节次的先后顺序不该由前端再排一遍。
+    """
+    class_id = _class_id(db_session)
+    assert _slot(client, class_id, "星期三", "第3节", "数学", teacher="王老师").status_code == 201
+    assert _slot(client, class_id, "星期一", "第1节", "语文").status_code == 201
+
+    data = client.get("/api/v1/schedule/week", params={"classId": class_id}).json()["data"]
+    assert data["weekdays"][2] == "星期三" and data["weekdays"][0] == "星期一"
+    third = data["periods"].index("第3节")
+    first = data["periods"].index("第1节")
+
+    assert data["grid"][2][third]["subject"] == "数学"
+    assert data["grid"][2][third]["teacher"] == "王老师"
+    # 星期一第 3 节没课：格子仍在（slotId 为空），界面据此显示成空格
+    assert data["grid"][0][third]["slotId"] is None
+    assert data["grid"][0][first]["subject"] == "语文"
+    # 删掉之后那一格回到空
+    slot_id = data["grid"][0][first]["slotId"]
+    client.delete(f"/api/v1/schedule_slots/{slot_id}")
+    after = client.get("/api/v1/schedule/week", params={"classId": class_id}).json()["data"]
+    assert after["grid"][0][first]["slotId"] is None

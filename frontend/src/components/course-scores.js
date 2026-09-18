@@ -119,7 +119,11 @@ export const courseScoresPanel = {
                 )
                 .join('')}
             </select>
-            <span class="muted">切到某个班时，统计与名次只算这个班</span>
+            <span class="muted">${
+              state.classId
+                ? '统计与名次只算这个班'
+                : '现在把几个班混在一起排名次 —— 要看班级之间的差别，请先切到某个班'
+            }</span>
           </div>`
         : '';
 

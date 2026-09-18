@@ -205,15 +205,18 @@ def apply_course_score(values: dict[str, Any], session: Session, row: Any = None
 
     name = _student_name(values, row)
     class_ids = course_class_ids(session, course.id)
-    student, problem, _kind = find_student(session, name=name, class_ids=class_ids, label="学生")
+    student, problem, kind = find_student(session, name=name, class_ids=class_ids, label="学生")
     if problem is not None:
         labels = class_labels(session)
         taught = "、".join(labels[cid] for cid in class_ids if cid in labels) or "（还没加过班级）"
-        raise ApiError(
-            INVALID_VALUE,
-            f"{problem}。这门课教的班：{taught}",
-            detail={"field": "student_name", "value": name},
+        # 人建了档、只是不在这门课的班里时要说准：`find_student` 的通用话术是
+        # 「学生档案里没有叫 X 的学生」，读起来像「没建档」（评审点过这一处）
+        message = (
+            f"「{name}」不在这门课教的班里（这门课教的班：{taught}）"
+            if kind == "missing" and class_ids
+            else f"{problem}。这门课教的班：{taught}"
         )
+        raise ApiError(INVALID_VALUE, message, detail={"field": "student_name", "value": name})
     values["student_id"] = student.id
     values["student_name"] = student.name
     values["class_id"] = student.class_id

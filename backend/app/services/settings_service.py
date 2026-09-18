@@ -39,12 +39,19 @@ CHILD_TABLES = {
     "duty_members": ("duty_groups", "duty_id"),
 }
 
-# 骨架表的中文名（业务表的名字从注册表取，这里只补不属于注册表的那几张）
+# 骨架表与子表的中文名（业务表的名字从注册表取，这里只补不在注册表里的）
 SKELETON_TITLES = {
     "classes": "班级本身",
     "student_field_def": "学生档案字段定义",
     "app_state": "应用配置",
     "media": "照片与录音",
+    # 这四张是**子表**（跟着父表走，注册表里没有它们自己的声明）。
+    # 漏了它们的话，清空确认框里会出现 `homework_unsubmitted 12` 这种英文表名 ——
+    # 列了行数也看不出是什么表（评审实测点过这条）
+    "homework_unsubmitted": "作业未交名单",
+    "exam_subjects": "考试科目与满分",
+    "conflict_parties": "矛盾调解参与人",
+    "duty_members": "值日成员",
 }
 
 CONFIRM_WORD = "清空"

@@ -22,6 +22,7 @@ from app.api.v1.dorms import router as dorms_router
 from app.api.v1.exams import router as exams_router
 from app.api.v1.fees import router as fees_router
 from app.api.v1.media import router as media_router
+from app.api.v1.schedule import router as schedule_router
 from app.api.v1.seats import router as seats_router
 from app.api.v1.settings import router as settings_router
 from app.api.v1.export import router as export_router
@@ -61,6 +62,8 @@ router.include_router(exams_router)
 router.include_router(dorms_router)
 # /seats/board、/seats/randomize … 必须先于 /seats/{row_id}
 router.include_router(seats_router)
+# /schedule/week 是独立前缀（表路由在 /schedule_slots/… 下，不会撞）
+router.include_router(schedule_router)
 # /analytics/overview、/analytics/followups 是独立前缀，不会与表路由冲突
 router.include_router(analytics_router)
 # /settings 是独立前缀
