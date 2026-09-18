@@ -127,18 +127,21 @@ def _summarize_day(day: date, roster: dict[int, str], rows: Iterable[Attendance]
 
     只统计**还在册**的学生：转出/删除的学生不该继续拉低出勤率，
     而分母（应到）本来就不含他们 —— 分子分母必须用同一个人群。
+
+    去重按 **student_id**，不是姓名：班上有两个「张伟」时，按姓名去重会把两个人
+    当成一个人（出勤率偏高、缺席名单少一个人）。旧应用按姓名匹配，同名本来就是个
+    现实问题（会议里点过），所以这里不能用姓名当身份。
     """
-    absent: list[str] = []
+    absent_ids: list[int] = []
     late = 0
     early = 0
     rows = list(rows)
     for row in rows:
-        name = roster.get(row.student_id)
-        if name is None:
+        if row.student_id not in roster:
             continue
         if row.type in ABSENCE_TYPES:
-            if name not in absent:
-                absent.append(name)
+            if row.student_id not in absent_ids:
+                absent_ids.append(row.student_id)
         elif row.type == "迟到":
             late += 1
         elif row.type == "早退":
@@ -147,13 +150,14 @@ def _summarize_day(day: date, roster: dict[int, str], rows: Iterable[Attendance]
     return DaySummary(
         day=day,
         expected=len(roster),
-        absent=len(absent),
+        absent=len(absent_ids),
         late=late,
         early=early,
         # 「登记过」按是否有记录判断：连转出学生的记录也算登记过，
         # 那天的考勤确实是记过的
         registered=bool(rows),
-        absent_students=tuple(absent),
+        # 同一个名字可能出现两次（真是两个人），照实列出来
+        absent_students=tuple(roster[student_id] for student_id in absent_ids),
     )
 
 

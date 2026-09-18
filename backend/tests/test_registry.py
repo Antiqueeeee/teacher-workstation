@@ -40,6 +40,11 @@ def columns_of(spec) -> set[str]:
     return available
 
 
+def sql_expressible(spec) -> set[str]:
+    """能进 SQL 的字段：真实列 + JSON 字段。**派生属性不在其中。**"""
+    return set(spec.model.__table__.columns.keys()) | set(spec.json_fields)
+
+
 @pytest.mark.parametrize("spec", SPECS, ids=SPEC_IDS)
 def test_every_declared_key_exists_on_model(spec):
     available = columns_of(spec)
@@ -78,6 +83,28 @@ def test_filter_and_sort_keys_are_usable(spec):
     assert spec.default_sort[0] in spec.sortable_keys, "默认排序键不可排序"
     for key in spec.filter_keys:
         assert key in spec.field_map, f"筛选键 {key} 没有对应的字段声明"
+
+
+@pytest.mark.parametrize("spec", SPECS, ids=SPEC_IDS)
+def test_sortable_and_searched_keys_must_be_sql_expressible(spec):
+    """能排序 / 筛选 / 搜索的列必须是**真实列或 JSON 字段**，不能是派生属性。
+
+    派生属性（如作业的未交名单）在 Python 里读得到，但 `field_expr` 取到的是
+    property 对象，构不出 SQL —— 一旦声明成可排序，用户点一下表头就是
+    AttributeError → 500「服务内部错误」。这个错真实发生过一次，
+    而且点完之后前端会把那个排序键记在 state 里，这个页面再也刷不出列表。
+    """
+    usable = sql_expressible(spec)
+    for column in spec.columns:
+        if column.sortable:
+            assert column.k in usable, (
+                f"{spec.key}.{column.k} 声明为可排序，但它不是真实列/JSON 字段 —— 点了会 500"
+            )
+    assert spec.default_sort[0] in usable, f"{spec.key} 的默认排序键不是真实列/JSON 字段"
+    for key in spec.search_keys:
+        assert key in usable, f"{spec.key} 的搜索键 {key} 不是真实列/JSON 字段"
+    for key in spec.filter_keys:
+        assert key in usable, f"{spec.key} 的筛选键 {key} 不是真实列/JSON 字段"
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=SPEC_IDS)

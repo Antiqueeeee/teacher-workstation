@@ -17,20 +17,15 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from app.api.errors import INVALID_VALUE, ApiError
-from app.models.homework import HomeworkUnsubmitted
+from app.models.homework import HomeworkUnsubmitted, compute_rate
 from app.services.roster import count_class_students, resolve_names, split_names
 
 
-def compute_rate(total: int | None, unsubmitted: int) -> int | None:
-    """提交率 = (应交 − 未交) / 应交。应交 0 人时返回 None。"""
-    if not total or total <= 0:
-        return None
-    missing = max(0, min(unsubmitted, total))  # 名单比应交人数还多时按应交人数封顶
-    return round((total - missing) / total * 100)
-
-
 def effective_rate(mode: str, manual: Any, total: int | None, unsubmitted: int) -> int | None:
-    """生效的提交率：手工模式用手填值（夹在 0–100），否则按名单算。"""
+    """生效的提交率：手工模式用手填值（夹在 0–100），否则按名单算。
+
+    公式本身在 `models/homework.py:compute_rate` —— 这里不复制一份。
+    """
     if mode == "手工" and manual not in (None, ""):
         return max(0, min(int(manual), 100))
     return compute_rate(total, unsubmitted)
@@ -46,8 +41,14 @@ def apply_homework(values: dict[str, Any], session: Session, row: Any = None) ->
     class_id = values.get("class_id") or getattr(row, "class_id", None)
 
     if values.get("total") in (None, ""):
-        # 没填就取当前全班人数（快照），而不是留 0 —— 留 0 会让提交率永远是「—」
-        values["total"] = count_class_students(session, class_id) if class_id else 0
+        if row is None:
+            # 没填就取当前全班人数（快照），而不是留 0 —— 留 0 会让提交率永远是「—」
+            values["total"] = count_class_students(session, class_id) if class_id else 0
+        else:
+            # **更新时留空不等于重新快照**：应交人数是创建时的快照，学生后来转入转出
+            # 不该改写历史作业（否则「上周的提交率」会自己变）。留空就保持原值 ——
+            # 顺便挡住「把 total 写成 NULL」这条会让 NOT NULL 列报错的路径
+            values.pop("total", None)
 
     def after_save(saved: Any) -> None:
         if text is not None:

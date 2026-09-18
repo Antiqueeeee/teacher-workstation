@@ -120,6 +120,42 @@ def check_unique_sno(values: dict[str, Any], session: Session, row: Any = None) 
         )
 
 
+def identity_conflicts(session: Session, class_id: int | None) -> dict[str, list[dict]]:
+    """本班里「靠姓名对不上人」的分组：同名。
+
+    判据与写入口的解析规则一致（`services/roster.resolve_names`、
+    `services/guardian_service.link_student`）—— 报告说没冲突、录数据却被拦下来，
+    那种前后不一致比不做报告还糟。
+
+    **学号不在这里报告，因为它不可能冲突**：`students` 上有一个部分唯一索引
+    `uq_students_class_sno(class_id, sno) WHERE sno <> ''`（空学号不算 ——
+    还没编学号是常态），写入口还会把冲突转成一句中文说明。
+    所以「学号冲突」是靠结构保证的，不需要报告让人去裁决。
+    """
+    query = select(Student).where(Student.deleted_at.is_(None))
+    if class_id:
+        query = query.where(Student.class_id == class_id)
+    students = list(session.scalars(query.order_by(Student.name, Student.sno)))
+
+    by_name: dict[str, list[Student]] = {}
+    for student in students:
+        by_name.setdefault(student.name.strip(), []).append(student)
+
+    return {
+        "names": [
+            {
+                "name": name,
+                "count": len(items),
+                "students": [
+                    {"id": item.id, "name": item.name, "sno": item.sno} for item in items
+                ],
+            }
+            for name, items in by_name.items()
+            if len(items) > 1 and name
+        ]
+    }
+
+
 def register_dynamic_tables() -> None:
     """把动态表注册进注册表。
 

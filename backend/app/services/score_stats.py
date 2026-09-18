@@ -352,8 +352,9 @@ def build_report(session: Session, exam: Exam, *, include_previous: bool = True)
         result = by_student.get(score.student_id)
         stat = subject_index.get(score.subject)
         if result is None or stat is None:
-            # 科目被移出这场考试、或学生已不在本班时可能留下这样的行。
-            # 统计忽略它，但录入表会照实显示，让人看到并处理 —— 不在这里静默计入
+            # 这种行**通过接口造不出来**：`set_subjects` 拒绝移出已有成绩的科目，
+            # `save_cells` 拒绝不在本场科目里的分数。这里是防手工改库的兜底 ——
+            # 统计时忽略，不静默把它算进某个学生或某科
             continue
         if score.absent:
             result.absent.append(score.subject)
@@ -418,7 +419,7 @@ def _apply_ranks(rows: list[StudentResult]) -> None:
     """
     ranked = sorted((row for row in rows if row.took_part), key=lambda row: -row.total)
     rank = 0
-    previous_total: int | None = None
+    previous_total: float | None = None
     for index, row in enumerate(ranked, start=1):
         if previous_total is None or row.total < previous_total:
             rank = index  # 分数降了才占新名次，同分沿用上一个名次

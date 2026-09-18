@@ -220,7 +220,7 @@ def test_unrecorded_is_not_zero_either(client, db_session):
     assert row["passed"] is False
 
     assert report["taken"] == 1                      # 实考只有 1 人
-    assert report["unrecordedStudents"] >= 1         # 还没录到他，界面要能说出来
+    assert report["unrecordedStudents"] == 1         # 还没录到他，界面要能说出来（用例级清理保证了人数精确）
     assert report["avgTotal"] == 100.0               # 没录的不拉低平均分
 
 
@@ -246,7 +246,7 @@ def test_fully_absent_student_counts_in_expected(client, db_session):
 
     assert _row(report, away)["rank"] is None
     assert report["taken"] == 1
-    assert report["absentStudents"] >= 1
+    assert report["absentStudents"] == 1
     assert report["avgTotal"] == 120.0
 
 
@@ -348,6 +348,47 @@ def test_saving_the_same_cell_twice_updates_instead_of_duplicating(client, db_se
     saved = db_session.scalars(select(Score).where(Score.exam_id == exam["id"])).all()
     assert len(saved) == 1  # 没有多出第二行（唯一约束 + 按格更新）
     assert saved[0].value == 120
+
+
+def test_same_cell_twice_in_one_submission_uses_the_last_value(client, db_session):
+    """同一次提交里同一格出现两次：按后面的为准，不是 500。
+
+    不去重的话第二次会走「新增」分支撞上唯一约束 —— 用户看到的是
+    「服务内部错误：IntegrityError」，既看不懂也没法自己解决。
+    """
+    exam = _exam(client, _class_id(db_session), name="同批重复格测试", date="2026-06-21")
+    student = _student(db_session, "同批重复格甲", "E9022")
+
+    response = _cells(
+        client,
+        exam["id"],
+        [
+            {"studentId": student.id, "subject": "语文", "value": 100},
+            {"studentId": student.id, "subject": "语文", "value": 130},
+        ],
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["changes"] == {"created": 1, "updated": 0, "removed": 0}
+
+    saved = db_session.scalars(select(Score).where(Score.exam_id == exam["id"])).all()
+    assert len(saved) == 1
+    assert saved[0].value == 130
+
+
+def test_absent_flag_accepts_chinese_and_string_false(client, db_session):
+    """`absent` 传来字符串 "否"/"false"/"0" 时是「不是缺考」—— `bool("否")` 是 True。"""
+    exam = _exam(client, _class_id(db_session), name="缺考标志解析测试", date="2026-06-22")
+    student = _student(db_session, "缺考标志甲", "E9023")
+
+    response = _cells(
+        client,
+        exam["id"],
+        [{"studentId": student.id, "subject": "语文", "value": 100, "absent": "否"}],
+    )
+    assert response.status_code == 200, response.text
+    row = _row(_report(client, exam["id"]), student)
+    assert row["values"] == {"语文": 100.0}
+    assert row["absent"] == []
 
 
 # ---------- 与上一场对比 ----------

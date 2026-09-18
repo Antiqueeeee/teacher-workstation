@@ -104,6 +104,10 @@ export const api = {
   attendanceSummary: (from, to, classId) =>
     request('/attendance/summary', { params: { from, to, classId } }).then((p) => p.data),
 
+  /** 学生档案：同名/同学号冲突报告（学生档案页面顶部据此提示）。 */
+  studentConflicts: (classId) =>
+    request('/students/name-conflicts', { params: { classId } }).then((p) => p.data),
+
   /** 成绩：录入表与报表。
    *  名次、及格率、得分率全部由后端算 —— 界面这层不自己数、也不自己排。 */
   scoreSheet: (examId) => request(`/exams/${examId}/sheet`).then((p) => p.data),

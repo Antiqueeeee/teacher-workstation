@@ -219,8 +219,11 @@ HOMEWORK = TableSpec(
         ColumnSpec("subject", "科目", w="70px"),
         ColumnSpec("content", "作业内容"),
         ColumnSpec("total", "应交", w="62px", numeric=True),
-        ColumnSpec("unsubmitted_names", "未交名单"),
+        # 派生属性（关系算出来的）**不能声明为可排序**：它构不出 SQL 表达式，
+        # 点一下表头就是 AttributeError → 500。列表里照常显示，只是不给点
+        ColumnSpec("unsubmitted_names", "未交名单", sortable=False),
         ColumnSpec("rate", "提交率", w="78px", numeric=True),
+        ColumnSpec("rate_auto", "按名单算", w="84px", numeric=True, sortable=False),
         ColumnSpec("quality", "质量", w="62px"),
     ),
     fields=(
@@ -228,7 +231,7 @@ HOMEWORK = TableSpec(
         FieldSpec("subject", "科目", type="select", options=SUBJECTS, required=True),
         FieldSpec("content", "作业内容", type="textarea", full=True, required=True),
         FieldSpec("deadline", "截止时间", hint="如 次日早读前"),
-        FieldSpec("total", "应交人数", type="number", hint="留空按当前全班人数"),
+        FieldSpec("total", "应交人数", type="number", hint="留空按当前全班人数（存成快照，之后不再变）"),
         FieldSpec(
             "unsubmitted_names",
             "未交名单",
@@ -248,6 +251,14 @@ HOMEWORK = TableSpec(
         # 计算出来的值：不让人填（editable=False），但声明成字段，导出的文件再导回来时
         # 这一列会被认出来并忽略，而不是报「认不出这一列」
         FieldSpec("rate", "提交率（%）", type="number", editable=False),
+        # 按名单算的值：与生效提交率并排放在导出里，手工覆盖时一眼看出两个数不一致
+        FieldSpec(
+            "rate_auto",
+            "按名单算（%）",
+            type="number",
+            editable=False,
+            hint="与「提交率」不一致时，说明手工覆盖的值与未交名单对不上",
+        ),
         FieldSpec("quality", "完成质量", type="select", options=QUALITIES, default="良"),
         FieldSpec("teacher", "布置教师"),
     ),

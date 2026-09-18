@@ -16,6 +16,7 @@
 
 import { openExamSubjects } from '../components/exam-subjects.js';
 import { confirmClearScores, openScoreSheet } from '../components/score-sheet.js';
+import { toast } from '../components/ui.js';
 import { api } from '../core/api.js';
 import { esc } from '../core/dom.js';
 import { DASH } from '../core/format.js';
@@ -247,6 +248,21 @@ function pickedExam() {
   return { id: Number(select.value), name: select.options[select.selectedIndex]?.text || '' };
 }
 
+/** 没有可选考试时告诉老师该怎么办，而不是让按钮点了没反应。 */
+async function requireExam() {
+  const exam = pickedExam();
+  if (exam) return exam;
+  const { exams } = await loadExams().catch(() => ({ exams: [] }));
+  toast(
+    exams.length
+      ? '成绩看板还没取到数据。请刷新页面后重试。'
+      : '还没有考试。请先在下面「新增」一场考试（填名称、日期、类型），再回来录成绩。',
+    'err',
+    8000,
+  );
+  return null;
+}
+
 export const scoresPageDef = {
   specKey: 'exams',
   group: '教学学业',
@@ -259,7 +275,7 @@ export const scoresPageDef = {
       iconName: 'pencil',
       primary: true,
       async run(ctx) {
-        const exam = pickedExam();
+        const exam = await requireExam();
         if (!exam) return;
         await openScoreSheet({ examId: exam.id, examName: exam.name, onSaved: ctx.refresh });
       },
@@ -269,7 +285,7 @@ export const scoresPageDef = {
       label: '科目与满分',
       iconName: 'list',
       async run(ctx) {
-        const exam = pickedExam();
+        const exam = await requireExam();
         if (!exam) return;
         await openExamSubjects({ examId: exam.id, examName: exam.name, onSaved: ctx.refresh });
       },
@@ -279,7 +295,7 @@ export const scoresPageDef = {
       label: '清空本场成绩',
       iconName: 'trash',
       async run(ctx) {
-        const exam = pickedExam();
+        const exam = await requireExam();
         if (!exam) return;
         await confirmClearScores({ examId: exam.id, examName: exam.name, onDone: ctx.refresh });
       },

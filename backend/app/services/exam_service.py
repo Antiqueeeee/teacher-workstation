@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import INVALID_VALUE, NOT_FOUND, ApiError
 from app.models.exam import Exam, ExamSubject, Score
 from app.models.vocab import DEFAULT_FULL_MARKS, SUBJECTS, subject_order
-from app.services.params import as_int
+from app.services.params import as_int, is_truthy
 from app.services.roster import list_class_students
 from app.services.score_stats import exam_subject_map, subject_sheet
 
@@ -146,7 +146,9 @@ def parse_cells(raw: Any) -> list[CellInput]:
         if not isinstance(item, dict):
             raise ApiError(INVALID_VALUE, f"第 {index} 项不是一格成绩", detail={"index": index})
         subject = str(item.get("subject") or "").strip()
-        absent = bool(item.get("absent"))
+        # 用 is_truthy 而不是 bool()：字符串 "false" / "否" / "0" 都是「不是缺考」，
+        # 而 bool("false") 是 True —— 会把「有分数且没缺考」的格子写成缺考
+        absent = is_truthy(item.get("absent"))
         raw_value = item.get("value")
         value: float | None = None
         if raw_value not in (None, ""):
@@ -185,8 +187,14 @@ def save_cells(session: Session, exam: Exam, cells: list[CellInput]) -> dict[str
         for row in session.scalars(select(Score).where(Score.exam_id == exam.id))
     }
 
-    created = updated = removed = 0
+    # 同一格在同一次提交里出现两次时**按后面的为准**：不去重的话，第二次会走「新增」
+    # 分支，撞上唯一约束变成 500「服务内部错误」（用户完全看不懂发生了什么）
+    merged: dict[tuple[int, str], CellInput] = {}
     for cell in cells:
+        merged[(cell.student_id, cell.subject)] = cell
+
+    created = updated = removed = 0
+    for cell in merged.values():
         if cell.subject not in full_map:
             raise ApiError(
                 INVALID_VALUE,
@@ -262,11 +270,17 @@ def sheet_view(session: Session, exam: Exam) -> dict[str, Any]:
     )
     cells: dict[tuple[int, str], dict[str, Any]] = {}
     for row in session.scalars(select(Score).where(Score.exam_id == exam.id)):
+        # 只收本场科目里的格子：接口造不出别的科目（`set_subjects` 拒绝移出已有成绩的
+        # 科目、`save_cells` 拒绝不在本场的分数），这里是防手工改库的兜底
         if row.subject in subject_names:
             cells[(row.student_id, row.subject)] = {
                 "value": row.value,
                 "absent": row.absent,
             }
+
+    # 名单只列**当前在册**学生：录入表要的是「接下来填谁的」。已经转出的学生在报表里
+    # 仍会显示（他的成绩是历史），但录入表不给他格子 —— 否则会写进一个不在册的人。
+    # 代价是转出学生的历史成绩改不了，这一点记在 06 变更登记表里。
 
     return {
         "examId": exam.id,

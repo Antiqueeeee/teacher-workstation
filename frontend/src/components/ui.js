@@ -34,12 +34,13 @@ export function modalOpen() {
 /**
  * 打开弹窗。`onMount(root)` 里绑事件。
  * 窄屏由 CSS 变成全屏抽屉（见 components.css），不必在这里分支。
+ * `wide` 给需要横向空间的表格类弹窗（成绩录入、点名名单）。
  */
 export function openModal({ title, body, footer = '', onMount, wide = false }) {
   const root = qs('#modal-root');
   root.innerHTML = `
     <div class="modal-mask" data-mask>
-      <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal${wide ? ' wide' : ''}" role="dialog" aria-modal="true">
         <div class="modal-head">
           <h3>${title}</h3>
           <button class="btn btn-sm btn-ghost" type="button" data-close>关闭</button>

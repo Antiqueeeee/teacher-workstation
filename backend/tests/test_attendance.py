@@ -65,8 +65,12 @@ def _summary(client, class_id: int, start: str, end: str | None = None) -> dict:
 # ---------- 出勤率口径 ----------
 
 
-def test_rate_counts_distinct_students_not_records(client, db_session):
-    """同一个学生一天两条记录不该被扣两次 —— 旧应用就是这样把 93% 当成 45 人班的出勤率的。"""
+def test_rate_counts_students_not_records(client, db_session):
+    """出勤率的分母与分子都按**人**算。
+
+    「一个学生一天只能有一条记录」由唯一约束保证（见下一条用例），
+    这条守的是分子：按去重学生数算，而不是按记录条数。
+    """
     class_id = _class_id(db_session)
     a = _student(db_session, "考勤口径甲", "A9001")
     b = _student(db_session, "考勤口径乙", "A9002")
@@ -82,6 +86,38 @@ def test_rate_counts_distinct_students_not_records(client, db_session):
     assert data["expected"] == expected
     assert data["absent"] == 2  # 按人算，不是按条算
     assert data["rate"] == round((expected - 2) / expected * 100)
+
+
+def test_same_name_students_are_counted_one_by_one(client, db_session):
+    """同名学生在出勤率里必须算**两个人** —— 去重按 student_id，不按姓名。
+
+    按姓名去重时，班上有两个「张伟」会让出勤率偏高、缺席名单少一个人。
+    这条走**点名**路径（按 studentId 提交）：出勤表单按姓名登记，同名本来就会被
+    钩子拦下来报「都叫」，所以同名真正能同时登记进来的入口是点名。
+    """
+    class_id = _class_id(db_session)
+    twin_a = _student(db_session, "考勤同名丙", "A9021")
+    twin_b = _student(db_session, "考勤同名丙", "A9022")
+    other = _student(db_session, "考勤同名丁", "A9023")
+    day = "2026-11-20"
+
+    response = _roll_call(
+        client,
+        class_id,
+        day,
+        [
+            {"studentId": twin_a.id, "type": "旷课"},
+            {"studentId": twin_b.id, "type": "旷课"},
+            {"studentId": other.id, "type": "旷课"},
+        ],
+    )
+    assert response.status_code == 200, response.text
+
+    data = _summary(client, class_id, day)
+    expected = _roster_size(db_session, class_id)
+    assert data["absent"] == 3  # 不是 2
+    assert data["days"][0]["absentStudents"].count("考勤同名丙") == 2
+    assert data["rate"] == round((expected - 3) / expected * 100)
 
 
 def test_second_record_for_the_same_student_and_day_is_rejected(client, db_session):

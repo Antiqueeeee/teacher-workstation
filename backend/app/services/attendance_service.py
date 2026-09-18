@@ -73,10 +73,14 @@ def _find_student(session: Session, name: str, class_id: int | None) -> Student:
             detail={"field": "student_name", "value": name},
         )
     if len(matches) > 1:
+        # 给一条**做得到**的出路：这张表单只收姓名，所以「用学号区分」在这里无解；
+        # 点名是按学生选的，不受重名影响；或者去档案里把名字改成能区分的写法
+        # （档案页顶部会列出所有同名分组）。旧应用在这里是直接挂到第一个人身上
         raise ApiError(
             INVALID_VALUE,
-            f"有 {len(matches)} 个学生都叫「{name}」，无法确定是哪一个。"
-            "请先在学生档案里用可区分的写法（例如带上学号）再登记考勤。",
+            f"有 {len(matches)} 个学生都叫「{name}」，系统分不清是哪一个。"
+            "请改用「点名」登记（它按学生选，不受重名影响），"
+            "或先到学生档案里把其中一个改成可区分的写法。",
             detail={"field": "student_name", "value": name, "matches": len(matches)},
         )
     return matches[0]

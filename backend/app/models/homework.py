@@ -35,6 +35,19 @@ QUALITIES = ("优", "良", "中", "差")
 RATE_MODES = ("自动", "手工")
 
 
+def compute_rate(total: int | None, unsubmitted: int) -> int | None:
+    """提交率 = (应交 − 未交) / 应交。应交 0 人时返回 None（界面显示「—」）。
+
+    放在模型模块里而不是服务层：`Homework.rate_auto`（派生属性）要用它，
+    而 models 不能 import services（分层禁令）。**规则只有这一份** ——
+    服务层的写入钩子也 import 它，不另写一遍。
+    """
+    if not total or total <= 0:
+        return None
+    missing = max(0, min(unsubmitted, total))  # 名单比应交人数还多时按应交人数封顶
+    return round((total - missing) / total * 100)
+
+
 class Homework(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "homework"
 
@@ -73,6 +86,16 @@ class Homework(Base, TimestampMixin, SoftDeleteMixin):
     @property
     def unsubmitted_count(self) -> int:
         return len(self.unsubmitted)
+
+    @property
+    def rate_auto(self) -> int | None:
+        """**按未交名单**算出来的提交率，不管当前是什么模式。
+
+        手工覆盖时用它对照：`rate` 与 `rate_auto` 差得远，多半是手工值填错了
+        （或者名单没更新）。界面据此提示差异 —— 否则「同一个提交率两个来源」
+        这件事在页面上完全看不出来。
+        """
+        return compute_rate(self.total, len(self.unsubmitted))
 
 
 class HomeworkUnsubmitted(Base, TimestampMixin):
