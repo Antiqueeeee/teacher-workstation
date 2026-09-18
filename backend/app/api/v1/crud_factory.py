@@ -15,10 +15,12 @@
     POST   /{key}/{id}/restore   恢复软删除（软删除必须留出口，否则「能找回」是空话）
     POST   /{key}/batch          批量：{"action": "delete"|"update", "ids": [], "patch": {}}
 
-三条纪律，改这个文件时别丢：
+四条纪律，改这个文件时别丢：
 1. 字段语义只在 `services/field_value.py` 实现一次（校验、默认值都从那里来）；
 2. 筛选/统计/导出共用 `services/table_query.py` 的条件构造；
-3. 可见性（软删除）只有 `_visible_or_none` / `_visible_rows` 两处判定。
+3. 可见性（软删除）只有 `_visible_or_none` / `_visible_rows` 两处判定；
+4. 保存前的派生/校验（把「学生姓名」变成 student_id 这类事）走统一的 `before_save` 钩子，
+   新增、更新、批量、导入四条路径都调用它。
 """
 
 from __future__ import annotations
@@ -98,6 +100,19 @@ def normalize(spec: TableSpec, payload: dict[str, Any], *, partial: bool) -> dic
     # 默认值补齐与导入预览/提交共用同一实现 —— 曾经两边不一致，
     # 出现「预览显示优先级=中、库里存的是空」这种数据错位
     return values if partial else apply_defaults(spec.fields, values)
+
+
+def run_before_save(spec: TableSpec, values: dict[str, Any], session: Session, row: Any = None) -> int | None:
+    """调用声明里的保存前钩子，返回钩子可能推导出的 class_id。
+
+    钩子能把「老师填的名字」变成「程序要的 id」（见 guardian_service.link_student）。
+
+    这里 `pop` 掉 class_id：它不进 `model(**values)`，而是由调用方按班级范围决定 ——
+    否则非班级范围的表会因为多出一个 class_id 参数直接报错。
+    """
+    if spec.before_save is not None:
+        spec.before_save(values, session, row)
+    return values.pop("class_id", None)
 
 
 # --------------------------------------------------------------------------- 辅助
@@ -182,10 +197,16 @@ def build_router(spec: TableSpec) -> APIRouter:
         body: dict[str, Any] = Body(default_factory=dict),
         session: Session = Depends(get_session),
     ):
-        class_id = resolve_class_id(spec, request.query_params.get("classId") or body.get("classId"), session)
-        row = model(**normalize(spec, body, partial=False))
-        if class_id is not None:
-            row.class_id = class_id
+        values = normalize(spec, body, partial=False)
+        hinted_class = run_before_save(spec, values, session, None)
+        if spec.class_scoped:
+            # 钩子推导出的班级优先于请求参数：它来自真实的学生记录，比参数可信
+            values["class_id"] = (
+                hinted_class
+                if hinted_class is not None
+                else resolve_class_id(spec, request.query_params.get("classId") or body.get("classId"), session)
+            )
+        row = model(**values)
         session.add(row)
         session.flush()
         return {"ok": True, "data": serialize(row, spec.output_keys)}
@@ -197,7 +218,10 @@ def build_router(spec: TableSpec) -> APIRouter:
         session: Session = Depends(get_session),
     ):
         row = _get_or_404(spec, session, row_id)
-        for key, value in normalize(spec, body, partial=True).items():
+        values = normalize(spec, body, partial=True)
+        # 更新时忽略钩子推导出的 class_id：改一条联系人资料，不该把它挪到别的班
+        run_before_save(spec, values, session, row)
+        for key, value in values.items():
             setattr(row, key, value)
         session.flush()
         return {"ok": True, "data": serialize(row, spec.output_keys)}
@@ -245,7 +269,9 @@ def build_router(spec: TableSpec) -> APIRouter:
             if not patch:
                 raise ApiError(INVALID_VALUE, "没有要修改的内容")
             for row in rows:
-                for key, value in patch.items():
+                row_values = dict(patch)
+                run_before_save(spec, row_values, session, row)
+                for key, value in row_values.items():
                     setattr(row, key, value)
         else:
             raise ApiError(INVALID_VALUE, "action 只能是 delete 或 update", detail={"action": action})

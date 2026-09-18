@@ -56,10 +56,21 @@ def normalize_header(value: Any) -> str:
 
 
 def build_alias_index(spec: TableSpec) -> dict[str, str]:
-    """规范化后的表头 → 字段 key。字段自己的 key 与中文名也进索引。"""
+    """规范化后的表头 → 字段 key。
+
+    别名有两个来源：内建表的 `ALIASES` 常量，以及字段声明自带的 `aliases`
+    （动态字段 —— 比如学生档案的 24 条定义，别名是从旧应用真实定义里抽出来的）。
+    两处最终都汇到这里，导入因此只有一条别名解析路径。
+    """
     index: dict[str, str] = {}
     for field_spec in spec.fields:
-        for candidate in (field_spec.k, field_spec.label, *ALIASES.get(field_spec.k, ())):
+        candidates = (
+            field_spec.k,
+            field_spec.label,
+            *field_spec.aliases,
+            *ALIASES.get(field_spec.k, ()),
+        )
+        for candidate in candidates:
             index.setdefault(normalize_header(candidate), field_spec.k)
     return index
 

@@ -58,6 +58,45 @@ def extract_object(text: str, marker: str) -> str:
     raise ValueError("没有找到完整的 JSON 对象，源文件可能已损坏")
 
 
+# 学生档案的默认字段模板：旧应用把 26 条字段定义（含 Excel 别名 syn）写在
+# `defaultStudentFields()` 里，属于**产品真实词表**，同样不该自己编。
+FIELD_FUNCTION = "defaultStudentFields"
+FIELD_CALL_RE = re.compile(r"f\(\{(?P<body>[^}]*)\}\)", re.S)
+
+
+def _function_region(text: str, name: str) -> str:
+    """取某个函数定义所在的文本区域（到下一个顶层 `function ` 为止）。
+
+    比按行号取稳：源码行号会随任何编辑漂移。
+    """
+    start = text.index(f"function {name}")
+    end = text.find("\nfunction ", start + 1)
+    return text[start : end if end != -1 else len(text)]
+
+
+def _js_object_to_json(body: str) -> str:
+    """把 JS 对象字面量的**键**加引号、单引号串换双引号，使其能当 JSON 解析。
+
+    注意先补回被外层正则剥掉的 `{` —— 否则**第一个键**前面没有 `{` 或 `,`，
+    加引号的替换会漏掉它，整条定义就解析不出来（踩过）。
+    """
+    wrapped = "{" + body + "}"
+    quoted_keys = re.sub(r"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:", r'\1"\2":', wrapped)
+    return re.sub(r"'([^']*)'", lambda match: '"' + match.group(1).replace('"', '\\"') + '"', quoted_keys)
+
+
+def extract_student_fields(text: str) -> list[dict[str, Any]]:
+    """抽出学生档案的默认字段定义（key/label/type/options/inList/inForm/... /syn）。"""
+    region = _function_region(text, FIELD_FUNCTION)
+    fields = []
+    for match in FIELD_CALL_RE.finditer(region):
+        try:
+            fields.append(json.loads(_js_object_to_json(match.group("body"))))
+        except json.JSONDecodeError:
+            continue  # 认不出的定义跳过，不要因为一条坏数据丢掉整份
+    return fields
+
+
 # 话术模板不是数据、而是硬编码在脚本里的（旧应用 `seedTemplatesOnce`），
 # 所以只能从源码里抠出来。字段就四个：标题 / 场景 / 语气 / 正文。
 TEMPLATE_RE = re.compile(
@@ -97,6 +136,16 @@ def main() -> int:
     templates = extract_templates(text)
     if templates:
         data["templates"] = templates
+
+    # 学生档案的默认字段模板也是硬编码的，单独落到一个资源文件里：
+    # 它是**应用数据**（新建档案时的默认字段集），不是测试夹具
+    student_fields = extract_student_fields(text)
+    if student_fields:
+        # 落到 app/services/ 下：它是**应用数据**（新建档案时的默认字段集），不是测试夹具
+        target = REPO / "backend" / "app" / "services" / "default_student_fields.json"
+        target.write_text(json.dumps(student_fields, ensure_ascii=False, indent=1), encoding="utf-8")
+        labels = "、".join(item.get("label", "?") for item in student_fields[:8])
+        print(f"   学生字段模板（{len(student_fields)} 条）: {labels} …")
 
     TARGET.parent.mkdir(parents=True, exist_ok=True)
     TARGET.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")

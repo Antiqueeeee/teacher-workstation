@@ -5,8 +5,19 @@
 
 from app.models.app_state import AppState
 from app.models.class_ import Class
+from app.models.guardian import Guardian
 from app.models.rule import Rule
+from app.models.student import Student, StudentFieldDef
 from app.models.template import Template
 from app.models.todo import Todo
 
-__all__ = ["AppState", "Class", "Rule", "Template", "Todo"]
+__all__ = [
+    "AppState",
+    "Class",
+    "Guardian",
+    "Rule",
+    "Student",
+    "StudentFieldDef",
+    "Template",
+    "Todo",
+]

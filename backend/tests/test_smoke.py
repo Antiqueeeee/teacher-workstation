@@ -8,14 +8,19 @@ from __future__ import annotations
 
 
 def test_health(client):
+    from app.schemas.registry import TABLES
+
     body = client.get("/api/v1/health").json()
     assert body["ok"] is True
-    assert body["data"]["tables"] == 3
+    # 与注册表对齐，而不是写死数字 —— 加一张表不该让测试红
+    assert body["data"]["tables"] == len(TABLES)
 
 
-def test_registry_exposes_three_tables(client):
+def test_registry_lists_every_declared_table(client):
+    from app.schemas.registry import TABLES
+
     data = client.get("/api/v1/meta/registry").json()["data"]
-    assert {spec["key"] for spec in data} == {"todos", "rules", "templates"}
+    assert {spec["key"] for spec in data} == set(TABLES)
 
     todos = next(spec for spec in data if spec["key"] == "todos")
     assert todos["classScoped"] is True

@@ -14,12 +14,15 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from app.db.base import Base
+from app.models.guardian import ROLES as GUARDIAN_ROLES
+from app.models.guardian import Guardian
 from app.models.rule import CATEGORIES as RULE_CATEGORIES
 from app.models.rule import Rule
 from app.models.template import CATEGORIES as TEMPLATE_CATEGORIES
 from app.models.template import TONES as TEMPLATE_TONES
 from app.models.template import Template
 from app.models.todo import PRIORITIES, Todo
+from app.services.guardian_service import link_student
 
 # 字段类型（与前端 field 渲染器一一对应）
 FIELD_TYPES = ("text", "number", "textarea", "select", "checkbox", "date")
@@ -49,6 +52,9 @@ class FieldSpec:
     full: bool = False          # 表单里占整行
     hint: str = ""
     editable: bool = True       # 只读字段（如系统生成的计数）
+    # Excel 表头别名。内建表写在 table_io.ALIASES，动态字段（如学生档案）
+    # 由字段定义带进来 —— 两处最终都汇到 table_io.build_alias_index
+    aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -68,6 +74,11 @@ class TableSpec:
     soft_delete: bool = True
     dedupe_keys: tuple[str, ...] = ()          # 导入时的「判重键」：同键视为同一条记录，跳过而不是重复插入
     extra_keys: tuple[str, ...] = field(default_factory=tuple)  # 输出里额外带的列
+    # 保存前的派生/校验钩子（旧应用的 beforeSave 就是这个位置）。
+    # 签名：before_save(values: dict, session: Session, row: 现有记录 | None) -> None
+    # 可以改 values、也可以抛 ApiError；新增、更新、导入提交三条路径都会调用它。
+    # 用途举例：监护人把「学生姓名」解析成 student_id 并带出 class_id。
+    before_save: Any = None
 
     @property
     def sortable_keys(self) -> frozenset[str]:
@@ -184,7 +195,44 @@ TEMPLATE = TableSpec(
     dedupe_keys=("title",),  # 同标题视为同一条模板
 )
 
-TABLES: dict[str, TableSpec] = {spec.key: spec for spec in (TODO, RULE, TEMPLATE)}
+GUARDIAN = TableSpec(
+    key="guardians",
+    model=Guardian,
+    title="家长通讯",
+    entity="监护人",
+    columns=(
+        ColumnSpec("student_name", "学生", w="90px"),
+        ColumnSpec("name", "姓名"),
+        ColumnSpec("role", "关系", w="76px"),
+        ColumnSpec("phone", "电话", w="130px"),
+        ColumnSpec("job", "工作单位", w="130px"),
+        ColumnSpec("is_primary", "主要联系人", w="100px"),
+        ColumnSpec("note", "备注"),
+    ),
+    fields=(
+        # 表单里填的是**学生姓名**，不是 id —— 老师记的是名字。
+        # student_id / class_id 由 services/guardian_service.py 的 before_save 解析出来，
+        # 同名学生会明确报错让人确认，而不是随便挂到一个同名学生身上
+        FieldSpec("student_name", "学生", required=True, hint="填学生姓名；重名时会提示确认"),
+        FieldSpec("name", "监护人姓名", required=True),
+        FieldSpec("role", "关系", type="select", options=GUARDIAN_ROLES, default="其他"),
+        FieldSpec("phone", "电话", hint="手机号或固定电话"),
+        FieldSpec("job", "工作单位"),
+        FieldSpec("wechat", "微信/其他联系标识"),
+        FieldSpec("is_primary", "主要联系人", type="checkbox", default=False, hint="紧急情况优先打这一个"),
+        FieldSpec("note", "备注", type="textarea", full=True),
+    ),
+    search_keys=("student_name", "name", "phone", "job"),
+    filter_keys=("role", "is_primary"),
+    default_sort=("id", -1),
+    class_scoped=True,
+    dedupe_keys=("student_name", "name"),  # 同一学生的同一位监护人，重复导入不翻倍
+    extra_keys=("student_id",),
+    # 把老师填的「学生姓名」解析成 student_id，并带出 class_id 与冗余姓名
+    before_save=link_student,
+)
+
+TABLES: dict[str, TableSpec] = {spec.key: spec for spec in (TODO, RULE, TEMPLATE, GUARDIAN)}
 
 
 def get_spec(key: str) -> TableSpec | None:

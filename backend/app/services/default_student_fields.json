@@ -1,0 +1,417 @@
+[
+ {
+  "k": "name",
+  "label": "姓名",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "searchable": true,
+  "width": "170px",
+  "identity": true,
+  "syn": [
+   "姓名",
+   "学生姓名",
+   "名字",
+   "学生",
+   "姓名/名称",
+   "学生名"
+  ]
+ },
+ {
+  "k": "sno",
+  "label": "学号",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "searchable": true,
+  "width": "92px",
+  "identity": true,
+  "syn": [
+   "学号",
+   "学籍号",
+   "考号",
+   "准考证号",
+   "学生编号",
+   "编号",
+   "学籍",
+   "学号/工号",
+   "学生证号"
+  ]
+ },
+ {
+  "k": "idcard",
+  "label": "身份证号",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "searchable": true,
+  "width": "132px",
+  "syn": [
+   "身份证",
+   "身份证号",
+   "证件号码",
+   "证件号",
+   "居民身份号码",
+   "ID号"
+  ]
+ },
+ {
+  "k": "gender",
+  "label": "性别",
+  "type": "select",
+  "options": [
+   "男",
+   "女"
+  ],
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "filter": true,
+  "width": "62px",
+  "syn": [
+   "性别",
+   "男女",
+   "学生性别",
+   "人员性别"
+  ]
+ },
+ {
+  "k": "boarding",
+  "label": "住宿",
+  "type": "select",
+  "options": [
+   "住校",
+   "走读"
+  ],
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "filter": true,
+  "width": "70px",
+  "syn": [
+   "住宿",
+   "宿舍",
+   "是否住宿",
+   "住宿情况",
+   "住校走读",
+   "寄宿",
+   "住读",
+   "在校",
+   "走读"
+  ]
+ },
+ {
+  "k": "politics",
+  "label": "政治面貌",
+  "type": "select",
+  "options": [
+   "共青团员",
+   "群众",
+   "中共预备党员"
+  ],
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "filter": true,
+  "width": "92px",
+  "syn": [
+   "政治面貌",
+   "面貌",
+   "党派",
+   "政治",
+   "政治身份",
+   "团员",
+   "是否为团员",
+   "团员身份"
+  ]
+ },
+ {
+  "k": "birth",
+  "label": "出生日期",
+  "type": "date",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "124px",
+  "syn": [
+   "出生日期",
+   "出生",
+   "生日",
+   "出生年月",
+   "出生年月日",
+   "出生时间",
+   "生年月"
+  ]
+ },
+ {
+  "k": "native",
+  "label": "籍贯",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "searchable": true,
+  "width": "100px",
+  "syn": [
+   "籍贯",
+   "生源地",
+   "家庭籍贯",
+   "户籍地",
+   "户籍"
+  ]
+ },
+ {
+  "k": "phone",
+  "label": "本人电话",
+  "type": "tel",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "searchable": true,
+  "width": "112px",
+  "syn": [
+   "电话",
+   "手机号",
+   "手机",
+   "联系电话",
+   "联系方式",
+   "本人电话",
+   "家长电话",
+   "联系手机",
+   "手机号码"
+  ]
+ },
+ {
+  "k": "hobby",
+  "label": "兴趣特长",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "88px",
+  "syn": [
+   "兴趣特长",
+   "特长",
+   "爱好特长",
+   "喜好"
+  ]
+ },
+ {
+  "k": "ethnicity",
+  "label": "民族",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "70px",
+  "syn": [
+   "民族",
+   "少数民族",
+   "民族成分"
+  ]
+ },
+ {
+  "k": "height",
+  "label": "身高",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "70px",
+  "syn": [
+   "身高",
+   "身高等",
+   "身高cm",
+   "身高/CM"
+  ]
+ },
+ {
+  "k": "juniorSchool",
+  "label": "毕业院校",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "130px",
+  "syn": [
+   "初中毕业校",
+   "初中毕业学校",
+   "初中",
+   "毕业学校",
+   "毕业初中",
+   "初中校",
+   "初中学校",
+   "中学",
+   "毕业院校",
+   "毕业学校名称"
+  ]
+ },
+ {
+  "k": "interest",
+  "label": "兴趣爱好",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "100px",
+  "syn": [
+   "兴趣爱好",
+   "兴趣",
+   "爱好"
+  ]
+ },
+ {
+  "k": "mbti",
+  "label": "MBTI",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "72px",
+  "syn": [
+   "MBTI",
+   "mbti",
+   "人格类型",
+   "性格类型"
+  ]
+ },
+ {
+  "k": "photoNote",
+  "label": "照片说明",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "90px",
+  "syn": [
+   "照片",
+   "相片",
+   "头像",
+   "学生照片",
+   "照片路径",
+   "照片文件名"
+  ]
+ },
+ {
+  "k": "father",
+  "label": "父亲姓名",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "80px",
+  "syn": [
+   "父亲",
+   "爸爸",
+   "父",
+   "父亲姓名",
+   "父名"
+  ]
+ },
+ {
+  "k": "mother",
+  "label": "母亲姓名",
+  "type": "text",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "80px",
+  "syn": [
+   "母亲",
+   "妈妈",
+   "母",
+   "母亲姓名",
+   "母名"
+  ]
+ },
+ {
+  "k": "fatherPhone",
+  "label": "父亲电话",
+  "type": "tel",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "112px",
+  "syn": [
+   "父亲电话",
+   "父电话",
+   "父亲手机"
+  ]
+ },
+ {
+  "k": "motherPhone",
+  "label": "母亲电话",
+  "type": "tel",
+  "inList": true,
+  "inForm": true,
+  "inDetail": true,
+  "width": "112px",
+  "syn": [
+   "母亲电话",
+   "母电话",
+   "母亲手机"
+  ]
+ },
+ {
+  "k": "photo",
+  "label": "学生照片",
+  "type": "photo",
+  "inList": false,
+  "inForm": true,
+  "inDetail": false,
+  "full": true,
+  "syn": []
+ },
+ {
+  "k": "enroll",
+  "label": "入学日期",
+  "type": "date",
+  "inList": false,
+  "inForm": true,
+  "inDetail": true,
+  "width": "124px",
+  "syn": [
+   "入学日期",
+   "入学",
+   "入学年月",
+   "入学时间",
+   "报到日期"
+  ]
+ },
+ {
+  "k": "address",
+  "label": "家庭住址",
+  "type": "text",
+  "inList": false,
+  "inForm": true,
+  "inDetail": true,
+  "width": "160px",
+  "syn": [
+   "地址",
+   "住址",
+   "家庭住址",
+   "居住地址",
+   "家庭地址"
+  ]
+ },
+ {
+  "k": "note",
+  "label": "备注",
+  "type": "textarea",
+  "inList": false,
+  "inForm": true,
+  "inDetail": true,
+  "full": true,
+  "syn": [
+   "备注",
+   "说明",
+   "注释",
+   "备注信息",
+   "备注说明",
+   "批注"
+  ]
+ }
+]

@@ -23,6 +23,7 @@ from app.db.engine import SessionLocal
 from app.db.migrate import upgrade_to_head
 from app.logging_setup import setup_logging
 from app.models.class_ import Class
+from app.services.student_fields import seed_field_defs
 
 logger = logging.getLogger("teacher-workstation")
 
@@ -45,6 +46,14 @@ async def lifespan(_app: FastAPI):
     ensure_dirs()
     upgrade_to_head()
     _ensure_default_class()
+
+    # 学生档案的默认字段模板：首次启动播种，之后**不覆盖**老师改过的定义
+    with SessionLocal() as session:
+        seeded = seed_field_defs(session)
+        session.commit()
+    if seeded:
+        logger.info("已播种 %d 条学生档案字段定义", seeded)
+
     logger.info("%s v%s 启动完成", APP_NAME, APP_VERSION)
     yield
 

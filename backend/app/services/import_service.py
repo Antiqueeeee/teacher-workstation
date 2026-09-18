@@ -210,9 +210,18 @@ def commit(
         if key is not None and key in existing:
             skipped.append({"row": index, "reason": "库里已有同一条记录，已跳过"})
             continue
-        row = spec.model(**values)
-        if spec.class_scoped and class_id is not None:
-            row.class_id = class_id
+
+        # 与新增/更新走同一个保存前钩子（例如把「学生姓名」解析成 student_id）。
+        # 钩子抛错会让整个导入回滚，不会写进半批数据。
+        row_values = dict(values)
+        hinted_class = None
+        if spec.before_save is not None:
+            spec.before_save(row_values, session, None)
+            hinted_class = row_values.pop("class_id", None)
+
+        row = spec.model(**row_values)
+        if spec.class_scoped:
+            row.class_id = hinted_class if hinted_class is not None else class_id
         session.add(row)
         if key is not None:
             existing.add(key)
