@@ -15,6 +15,7 @@ from typing import Any
 
 from app.db.base import Base
 from app.models.attendance import ATTENDANCE_TYPES, FOLLOW_UP_STATES, PERIODS, Attendance
+from app.models.dorm import DEFAULT_CAPACITY, DormBed, DormRoom
 from app.models.exam import EXAM_KINDS, Exam
 from app.models.guardian import ROLES as GUARDIAN_ROLES
 from app.models.guardian import Guardian
@@ -26,12 +27,15 @@ from app.models.template import TONES as TEMPLATE_TONES
 from app.models.template import Template
 from app.models.todo import PRIORITIES, Todo
 from app.services.attendance_service import apply_attendance
+from app.services.dorm_service import apply_bed, apply_room
 from app.services.exam_service import apply_exam
 from app.services.guardian_service import link_student
 from app.services.homework_service import apply_homework
 
-# 字段类型（与前端 field 渲染器一一对应）
-FIELD_TYPES = ("text", "number", "textarea", "select", "checkbox", "date")
+# 字段类型（与前端 field 渲染器一一对应）。
+# `bedno` = 「老师会写『1号床』『203室』」的整数：宽容地取第一段数字，
+# 但认不出来时**报错**，而不是静默变成 0（旧应用就是这么让记录从网格里消失的）。
+FIELD_TYPES = ("text", "number", "textarea", "select", "checkbox", "date", "bedno")
 
 
 @dataclass(frozen=True)
@@ -348,6 +352,92 @@ EXAM = TableSpec(
     before_save=apply_exam,
 )
 
+DORM_ROOM = TableSpec(
+    key="dorm_rooms",
+    model=DormRoom,
+    title="宿舍房间",
+    entity="宿舍房间",
+    columns=(
+        ColumnSpec("building", "楼栋", w="88px"),
+        ColumnSpec("room_no", "房号", w="80px"),
+        ColumnSpec("capacity", "容量", w="70px", numeric=True),
+        ColumnSpec("occupied", "已住", w="64px", numeric=True, sortable=False),
+        ColumnSpec("full", "满员", w="64px", sortable=False),
+        ColumnSpec("note", "备注"),
+    ),
+    fields=(
+        FieldSpec("building", "楼栋", hint="只有一个宿舍楼时留空即可"),
+        FieldSpec("room_no", "房号", required=True, hint="如 203"),
+        FieldSpec(
+            "capacity",
+            "容量（几人间）",
+            type="number",
+            default=DEFAULT_CAPACITY,
+            hint=f"留空按 {DEFAULT_CAPACITY} 人间；要改小会先检查里面住了几个人",
+        ),
+        FieldSpec("note", "备注", type="textarea", full=True),
+        # 派生值：导出带上、导入忽略，人不用填（与作业的提交率同一套做法）
+        FieldSpec("occupied", "已住人数", type="number", editable=False),
+    ),
+    search_keys=("room_no", "building", "note"),
+    filter_keys=("building",),
+    default_sort=("room_no", 1),
+    dedupe_keys=("building", "room_no"),
+    before_save=apply_room,
+)
+
+DORM_BED = TableSpec(
+    key="dorm_beds",
+    model=DormBed,
+    title="宿舍分布",
+    entity="床位",
+    # 楼栋/房号/学号是**派生属性**（来自房间与学生），所以不能声明为可排序/可筛选 ——
+    # 排序点下去会 500（看门测试拦着）。列表照常显示，分组看「宿舍分布」的看板视图
+    columns=(
+        ColumnSpec("building", "楼栋", w="88px", sortable=False),
+        ColumnSpec("room_no", "房号", w="80px", sortable=False),
+        ColumnSpec("bed_no", "床位号", w="76px", numeric=True),
+        ColumnSpec("student_name", "学生", w="92px"),
+        ColumnSpec("leader", "寝室长", w="76px"),
+        ColumnSpec("note", "备注"),
+    ),
+    fields=(
+        FieldSpec(
+            "building",
+            "楼栋",
+            hint="没有楼栋就留空；房间不存在时会自动建出来",
+        ),
+        FieldSpec("room_no", "房号", required=True),
+        FieldSpec(
+            "bed_no",
+            "床位号",
+            # `bedno` 类型 = 宽容的整数：「1号床」「01」都认成 1，「靠窗」报错
+            # （导入预览里就会报，不用等到提交）
+            type="bedno",
+            required=True,
+            hint="如 1 或 1号床；认不出来的写法（例如「靠窗」）会报错，不会变成 0 号床",
+        ),
+        FieldSpec(
+            "student_name",
+            "学生",
+            hint="填学生姓名；也可以用学号（下面那一栏）",
+        ),
+        FieldSpec("sno", "学号", hint="姓名重名时用学号指定"),
+        FieldSpec("leader", "寝室长", type="checkbox", default=False),
+        FieldSpec("note", "备注", type="textarea", full=True, hint="如：上铺、靠窗"),
+    ),
+    search_keys=("student_name", "note"),
+    filter_keys=("leader",),
+    default_sort=("bed_no", 1),
+    # 床位**没有软删除**：腾床位就是删掉这一行。软删除会让 (room_id, bed_no)
+    # 唯一约束与「重新分配同一个床位」冲突，而「找回一条床位记录」并不需要
+    soft_delete=False,
+    # 一个学生只能有一张床（唯一索引兜底），导入判重按人算
+    dedupe_keys=("student_name",),
+    extra_keys=("student_id", "room_id", "room_label", "orphan"),
+    before_save=apply_bed,
+)
+
 GUARDIAN = TableSpec(
     key="guardians",
     model=Guardian,
@@ -386,7 +476,8 @@ GUARDIAN = TableSpec(
 )
 
 TABLES: dict[str, TableSpec] = {
-    spec.key: spec for spec in (TODO, RULE, TEMPLATE, GUARDIAN, HOMEWORK, ATTENDANCE, EXAM)
+    spec.key: spec
+    for spec in (TODO, RULE, TEMPLATE, GUARDIAN, HOMEWORK, ATTENDANCE, EXAM, DORM_ROOM, DORM_BED)
 }
 
 # 字段定义存在数据库里的表（学生档案）：spec 每次请求**现算**。

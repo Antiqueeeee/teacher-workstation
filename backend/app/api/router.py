@@ -13,6 +13,7 @@ from fastapi import APIRouter, FastAPI
 
 from app.api.v1.attendance_day import router as attendance_day_router
 from app.api.v1.crud_factory import build_router
+from app.api.v1.dorms import router as dorms_router
 from app.api.v1.exams import router as exams_router
 from app.api.v1.export import router as export_router
 from app.api.v1.student_fields import router as student_fields_router
@@ -46,6 +47,8 @@ router.include_router(student_reports_router)
 router.include_router(attendance_day_router)
 # /exams/{id}/sheet、/exams/{id}/report … 必须先于 /exams/{row_id}
 router.include_router(exams_router)
+# /dorms/tree、/dorms/unassigned 必须先于 /dorm_rooms/{row_id} 之类（同一个字面路径规矩）
+router.include_router(dorms_router)
 
 # 静态表：声明写死在注册表里，这里直接生成路由
 for _spec in TABLES.values():

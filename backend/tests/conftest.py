@@ -59,6 +59,8 @@ BUSINESS_TABLES = (
     "scores",
     "exam_subjects",
     "exams",
+    "dorm_beds",
+    "dorm_rooms",
     "attendance",
     "homework_unsubmitted",
     "homework",

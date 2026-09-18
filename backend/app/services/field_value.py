@@ -10,11 +10,15 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
 from app.schemas.registry import FieldSpec
+
+# 床位号之类「老师会写中文」的整数：取第一段数字（见 `_parse_bed_no`）
+BED_NUMBER = re.compile(r"\d+")
 
 # 布尔的中文/数字/英文写法（表单、Excel、旧数据里都出现过）
 TRUE_WORDS = {"1", "true", "yes", "y", "是", "已完成", "已缴", "已交", "有"}
@@ -76,6 +80,35 @@ def _parse_number(field: FieldSpec, raw: Any) -> tuple[Any, ValueIssue | None]:
         return None, ValueIssue(CODE_INVALID_VALUE, f"「{field.label}」需要是数字（当前：{raw}）")
 
 
+def _parse_bed_no(field: FieldSpec, raw: Any) -> tuple[Any, ValueIssue | None]:
+    """床位号 / 房间序号这类整数，但**容忍中文写法**：「1号床」「01」「床 1」都认。
+
+    取第一段数字（旧应用的 `:13645` 就是这么解析的），所以「1号床（靠窗）」→ 1 ——
+    老师的表里就是这种写法，这个宽容度要保留。
+
+    区别在于认不出来时**报错**：旧应用把「靠窗」解析成 0，那条记录从此在网格里
+    看不见、还会让满员判定出错，而界面上没有任何提示。
+    """
+    if is_empty(raw):
+        return (None, _missing(field)) if field.required else (None, None)
+    if isinstance(raw, bool):
+        return None, ValueIssue(CODE_INVALID_VALUE, f"「{field.label}」要填数字")
+    if isinstance(raw, int):
+        return raw, None
+    if isinstance(raw, float):
+        if float(raw).is_integer():
+            return int(raw), None
+        return None, ValueIssue(CODE_INVALID_VALUE, f"「{field.label}」需要是整数（当前：{raw}）")
+
+    match = BED_NUMBER.search(str(raw))
+    if not match:
+        return None, ValueIssue(
+            CODE_INVALID_VALUE,
+            f"认不出的「{field.label}」「{raw}」。请填数字，例如 1 或 1号床。",
+        )
+    return int(match.group()), None
+
+
 def _parse_date(field: FieldSpec, raw: Any) -> tuple[Any, ValueIssue | None]:
     if is_empty(raw):
         return (None, _missing(field)) if field.required else (None, None)
@@ -116,6 +149,8 @@ def parse_value(field: FieldSpec, raw: Any) -> tuple[Any, ValueIssue | None]:
         return _parse_number(field, raw)
     if field.type == "date":
         return _parse_date(field, raw)
+    if field.type == "bedno":
+        return _parse_bed_no(field, raw)
     return _parse_text(field, raw)
 
 

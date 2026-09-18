@@ -62,6 +62,22 @@ def test_every_declared_key_exists_on_model(spec):
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=SPEC_IDS)
+def test_required_fields_have_no_default(spec):
+    """`required=True` 与默认值不能同时声明 —— 那个默认值**永远不会生效**。
+
+    `table_write.normalize` 的顺序是：先看提交体里有没有这个键，没有且 required
+    就直接报「必填」，根本轮不到 `apply_defaults` 去补默认值。
+    两个都写的结果是「声明里写着一个像是有默认值的字段，实际用起来却必须填」。
+    """
+    for field in spec.fields:
+        if field.required and field.default is not None:
+            raise AssertionError(
+                f"{spec.key}.{field.k}: required=True 时默认值 {field.default!r} 不会生效，"
+                "要么去掉 required（留空用默认值），要么去掉默认值（必须填）"
+            )
+
+
+@pytest.mark.parametrize("spec", SPECS, ids=SPEC_IDS)
 def test_select_fields_declare_options(spec):
     for field in spec.fields:
         if field.type == "select":
