@@ -17,13 +17,19 @@ import { attendancePageDef } from './pages/attendance.js';
 import { dormDutyPageDef } from './pages/dorm-duty.js';
 import { contactsPageDef } from './pages/contacts.js';
 import { homePage } from './pages/home.js';
+import { cadresPageDef } from './pages/cadres.js';
 import { dormsPageDef } from './pages/dorms.js';
+import { dutyGroupsPageDef } from './pages/duty_groups.js';
+import { grantsPageDef } from './pages/grants.js';
 import { guardiansPageDef } from './pages/guardians.js';
+import { healthRecordsPageDef } from './pages/health_records.js';
 import { homeworkPageDef } from './pages/homework.js';
 import { rulesPageDef } from './pages/rules.js';
+import { disciplinesPageDef } from './pages/disciplines.js';
 import { scoresPageDef } from './pages/scores.js';
 import { seatsPageDef } from './pages/seats.js';
 import { studentsPageDef } from './pages/students.js';
+import { youthMembersPageDef } from './pages/youth_members.js';
 import { templatesPageDef } from './pages/templates.js';
 import { todosPageDef } from './pages/todos.js';
 
@@ -32,7 +38,13 @@ const PAGE_DEFS = [
   homePage,
   studentsPageDef,
   guardiansPageDef,
+  disciplinesPageDef,
+  healthRecordsPageDef,
+  grantsPageDef,
   contactsPageDef,
+  cadresPageDef,
+  youthMembersPageDef,
+  dutyGroupsPageDef,
   attendancePageDef,
   homeworkPageDef,
   scoresPageDef,

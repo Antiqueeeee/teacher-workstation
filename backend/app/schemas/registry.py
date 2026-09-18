@@ -20,8 +20,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.schemas.specs.class_roles import CADRE, DUTY, YOUTH
 from app.schemas.specs.classroom import RULE, TEMPLATE, TODO
 from app.schemas.specs.contact import CONTACT, GUARDIAN
+from app.schemas.specs.student_records import DISCIPLINE, GRANT, HEALTH
 from app.schemas.specs.dorm import DORM_BED, DORM_DUTY, DORM_ROOM, SEAT
 from app.schemas.specs.teaching import ATTENDANCE, EXAM, HOMEWORK
 from app.schemas.table_spec import FIELD_TYPES, ColumnSpec, FieldSpec, TableSpec
@@ -44,6 +46,12 @@ __all__ = [
     "DORM_BED",
     "DORM_DUTY",
     "SEAT",
+    "CADRE",
+    "YOUTH",
+    "DUTY",
+    "DISCIPLINE",
+    "HEALTH",
+    "GRANT",
     "TABLES",
     "DYNAMIC_TABLES",
     "get_spec",
@@ -66,6 +74,12 @@ TABLES: dict[str, TableSpec] = {
         DORM_BED,
         DORM_DUTY,
         SEAT,
+        CADRE,
+        YOUTH,
+        DUTY,
+        DISCIPLINE,
+        HEALTH,
+        GRANT,
     )
 }
 

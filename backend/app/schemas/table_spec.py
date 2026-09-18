@@ -13,7 +13,17 @@ from typing import Any
 from app.db.base import Base
 
 
-FIELD_TYPES = ("text", "number", "textarea", "select", "checkbox", "date", "bedno")
+FIELD_TYPES = (
+    "text",
+    "number",
+    "textarea",
+    "select",
+    "checkbox",
+    "date",
+    "bedno",
+    # 金额：界面填「元」，库里存「分」（整数）—— 浮点算钱会出现小数尾数
+    "money",
+)
 
 
 @dataclass(frozen=True)

@@ -13,6 +13,7 @@ from fastapi import APIRouter, FastAPI
 
 from app.api.v1.attendance_day import router as attendance_day_router
 from app.api.v1.analytics import router as analytics_router
+from app.api.v1.class_roles import router as class_roles_router
 from app.api.v1.contacts import router as contacts_router
 from app.api.v1.crud_factory import build_router
 from app.api.v1.dorms import router as dorms_router
@@ -57,6 +58,8 @@ router.include_router(dorms_router)
 router.include_router(seats_router)
 # /analytics/overview、/analytics/followups 是独立前缀，不会与表路由冲突
 router.include_router(analytics_router)
+# /youth_members/consistency 必须先于 /youth_members/{row_id}
+router.include_router(class_roles_router)
 # /contacts/follow-ups 必须先于 /contacts/{row_id}
 router.include_router(contacts_router)
 # /media/storage、/media/purge 必须先于 /media/{row_id}

@@ -80,6 +80,26 @@ def _parse_number(field: FieldSpec, raw: Any) -> tuple[Any, ValueIssue | None]:
         return None, ValueIssue(CODE_INVALID_VALUE, f"「{field.label}」需要是数字（当前：{raw}）")
 
 
+def _parse_money(field: FieldSpec, raw: Any) -> tuple[Any, ValueIssue | None]:
+    """金额：用户填**元**，存**分**（整数）。
+
+    为什么单独一个类型而不是用 `number`：`number` 是整数专用的（人数、床位号那种），
+    `1200.50` 会被它判成「需要是整数」。金额也不能存浮点的元 ——
+    `0.1 + 0.2` 在浮点里是 `0.30000000000000004`，而这是要跟家长对账的钱。
+    """
+    if is_empty(raw):
+        return (None, _missing(field)) if field.required else (0, None)
+    text = (
+        str(raw).strip().replace(",", "").replace("，", "").replace("¥", "").replace("元", "")
+    )
+    try:
+        return int(round(float(text) * 100)), None
+    except ValueError:
+        return None, ValueIssue(
+            CODE_INVALID_VALUE, f"「{field.label}」要填数字（元），如 1200 或 1200.50"
+        )
+
+
 def _parse_bed_no(field: FieldSpec, raw: Any) -> tuple[Any, ValueIssue | None]:
     """床位号 / 房间序号这类整数，但**容忍中文写法**：「1号床」「01」「床 1」都认。
 
@@ -151,6 +171,8 @@ def parse_value(field: FieldSpec, raw: Any) -> tuple[Any, ValueIssue | None]:
         return _parse_date(field, raw)
     if field.type == "bedno":
         return _parse_bed_no(field, raw)
+    if field.type == "money":
+        return _parse_money(field, raw)
     return _parse_text(field, raw)
 
 

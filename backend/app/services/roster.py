@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.errors import INVALID_VALUE, ApiError
 from app.models.student import Student
 
 SEPARATORS = re.compile(r"[、,，;；/\s]+")
@@ -133,3 +135,26 @@ def find_student(
             "请改用学号指定，或先到学生档案里把其中一个改成可区分的写法。"
         ), "ambiguous"
     return matches[0], None, None
+
+
+def student_link_hook(label: str = "学生", field: str = "student_name"):
+    """生成一个「把姓名解析成 student_id」的保存前钩子。
+
+    班委、团员、值日、违纪、特殊体质、助学金这几张表都要这一步，写法一模一样 ——
+    所以生成一个，而不是抄六遍（抄六遍的后果是六份提示词慢慢变成六种说法）。
+    """
+
+    def hook(values: dict, session: Session, row: Any = None) -> None:
+        name = str(
+            values.get(field) or (getattr(row, field, "") if row is not None else "") or ""
+        ).strip()
+        if not name:
+            raise ApiError(INVALID_VALUE, f"必须填写{label}姓名", detail={"field": field})
+        class_id = values.get("class_id") or (getattr(row, "class_id", None) if row else None)
+        student, problem, _kind = find_student(session, name=name, class_id=class_id, label=label)
+        if problem is not None:
+            raise ApiError(INVALID_VALUE, problem, detail={"field": field, "value": name})
+        values["student_id"] = student.id
+        values[field] = student.name
+
+    return hook

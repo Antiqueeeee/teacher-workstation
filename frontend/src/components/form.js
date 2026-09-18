@@ -20,6 +20,9 @@ function inputHtml(field, value) {
       return `<input ${common} type="number" inputmode="numeric" value="${esc(current)}">`;
     case 'date':
       return `<input ${common} type="date" value="${esc(String(current).slice(0, 10))}">`;
+    case 'money':
+      // 金额按「元」填，库里存分（解析在后端字段语义那一处）。手机上要弹出数字键盘
+      return `<input ${common} type="number" step="0.01" inputmode="decimal" value="${esc(current)}">`;
     case 'textarea':
       return `<textarea id="${id}" name="${esc(field.k)}" class="textarea" rows="4">${esc(current)}</textarea>`;
     case 'select':
