@@ -49,20 +49,22 @@ def normalize_type(raw_type: str | None) -> str:
     return TYPE_MAP.get(raw_type or "", raw_type or FALLBACK_TYPE)
 
 
-def seed_field_defs(session: Session) -> int:
-    """把默认字段模板写进库。**幂等**：同 key 已存在就跳过，不覆盖老师改过的定义。"""
-    existing = set(session.scalars(select(StudentFieldDef.key)))
-    created = 0
+def build_defs_from_template() -> list[StudentFieldDef]:
+    """按默认模板造出字段定义对象（**不落库**）。
+
+    播种与「迁移还没跑、表还不存在时的兜底」共用它 ——
+    两处各写一遍模板解析，迟早不一致。
+    """
+    defs: list[StudentFieldDef] = []
     for order, row in enumerate(load_default_fields(), start=1):
         key = row.get("k")
-        if not key or key in existing:
+        if not key:
             continue
-        field_type = normalize_type(row.get("type"))
-        session.add(
+        defs.append(
             StudentFieldDef(
                 key=key,
                 label=row.get("label") or key,
-                type=field_type,
+                type=normalize_type(row.get("type")),
                 options=list(row.get("options") or []),
                 required=bool(row.get("required")),
                 identity=bool(row.get("identity")),
@@ -76,5 +78,16 @@ def seed_field_defs(session: Session) -> int:
                 hint=FIELD_TYPE_HINT.get(row.get("type") or "", ""),
             )
         )
+    return defs
+
+
+def seed_field_defs(session: Session) -> int:
+    """把默认字段模板写进库。**幂等**：同 key 已存在就跳过，不覆盖老师改过的定义。"""
+    existing = set(session.scalars(select(StudentFieldDef.key)))
+    created = 0
+    for definition in build_defs_from_template():
+        if definition.key in existing:
+            continue
+        session.add(definition)
         created += 1
     return created

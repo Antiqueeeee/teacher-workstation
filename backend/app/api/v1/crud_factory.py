@@ -3,6 +3,9 @@
 一个表只需要在 `schemas/registry.py` 里声明一次，路由、校验、分页、筛选、软删除
 全部由这里生成 —— 避免旧应用那种「每个模块手写一遍列表/表单/校验」的重复。
 
+支持动态表：`spec_provider` 每次请求都会重新取声明，所以像学生档案那种
+「字段定义存在数据库、老师随时增删字段」的表，不需要重启服务就能生效。
+
 接口（见 `docs/改造方案/03` §5.1）：
     GET    /{key}                列表：q / sort / dir / page / pageSize / classId
                                  / filter.<列> / includeDeleted
@@ -15,17 +18,17 @@
     POST   /{key}/{id}/restore   恢复软删除（软删除必须留出口，否则「能找回」是空话）
     POST   /{key}/batch          批量：{"action": "delete"|"update", "ids": [], "patch": {}}
 
-四条纪律，改这个文件时别丢：
+五条纪律，改这个文件时别丢：
 1. 字段语义只在 `services/field_value.py` 实现一次（校验、默认值都从那里来）；
 2. 筛选/统计/导出共用 `services/table_query.py` 的条件构造；
-3. 可见性（软删除）只有 `_visible_or_none` / `_visible_rows` 两处判定；
-4. 保存前的派生/校验（把「学生姓名」变成 student_id 这类事）走统一的 `before_save` 钩子，
-   新增、更新、批量、导入四条路径都调用它。
+3. 可见性（软删除）只有 `_visible_or_none` 一处判定；
+4. 保存前的派生/校验走统一的 `before_save` 钩子（新增、更新、批量、导入四条路径都调用）；
+5. 输出统一走 `serialize_row` —— 它知道哪些字段在真实列、哪些在 JSON 列。
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import APIRouter, Body, Depends, Request
 from sqlalchemy import func, select
@@ -40,7 +43,7 @@ from app.api.errors import (
 )
 from app.db.base import utcnow
 from app.db.engine import get_session
-from app.schemas.common import page_meta, serialize
+from app.schemas.common import page_meta, serialize_row, split_values
 from app.schemas.registry import FieldSpec, TableSpec
 from app.services.class_scope import resolve_class_id
 from app.services.field_value import CODE_MISSING_REQUIRED, apply_defaults, parse_value
@@ -49,6 +52,8 @@ from app.services.table_query import build_conditions, build_list_query
 
 # 这些键由系统管理，出现在提交体里不算「未知字段」，但也不允许客户端直接改
 RESERVED_KEYS = frozenset({"id", "class_id", "classId", "created_at", "updated_at", "deleted_at"})
+
+SpecProvider = Callable[[], TableSpec]
 
 
 # --------------------------------------------------------------------------- 校验
@@ -149,12 +154,15 @@ def _bucket_label(field: FieldSpec | None, value: Any) -> str:
 # --------------------------------------------------------------------------- 工厂
 
 
-def build_router(spec: TableSpec) -> APIRouter:
-    model = spec.model
-    router = APIRouter(prefix=f"/{spec.key}", tags=[spec.title])
+def build_router(spec_provider: SpecProvider) -> APIRouter:
+    """按表声明生成路由。传的是 **provider** 而不是 spec 本身 ——
+    动态表的声明每次请求现取（老师加字段后立刻生效）。"""
+    bootstrap_spec = spec_provider()
+    router = APIRouter(prefix=f"/{bootstrap_spec.key}", tags=[bootstrap_spec.title])
 
     @router.get("")
     def list_items(request: Request, session: Session = Depends(get_session)):
+        spec = spec_provider()
         # 筛选/排序/分页一律走 services/table_query.py —— 统计与导出用的是同一份实现
         query = build_list_query(spec, session, request.query_params)
         total = query.total(session)
@@ -163,14 +171,16 @@ def build_router(spec: TableSpec) -> APIRouter:
         ).all()
         return {
             "ok": True,
-            "data": [serialize(row, spec.output_keys) for row in rows],
+            "data": [serialize_row(spec, row) for row in rows],
             "meta": page_meta(total, query.page, query.page_size),
         }
 
     @router.get("/stats")
     def stats(request: Request, session: Session = Depends(get_session)):
         """KPI 用。与列表**共用同一套条件** —— 否则搜完之后的总数不是搜索结果的总数。"""
+        spec = spec_provider()
         conditions = build_conditions(spec, session, request.query_params)
+        model = spec.model
         total = session.scalar(select(func.count()).select_from(model).where(*conditions)) or 0
 
         groups: dict[str, dict[str, int]] = {}
@@ -185,11 +195,12 @@ def build_router(spec: TableSpec) -> APIRouter:
 
     @router.get("/schema")
     def schema():
-        return {"ok": True, "data": spec.to_dict()}
+        return {"ok": True, "data": spec_provider().to_dict()}
 
     @router.get("/{row_id}")
     def get_one(row_id: int, session: Session = Depends(get_session)):
-        return {"ok": True, "data": serialize(_get_or_404(spec, session, row_id), spec.output_keys)}
+        spec = spec_provider()
+        return {"ok": True, "data": serialize_row(spec, _get_or_404(spec, session, row_id))}
 
     @router.post("", status_code=201)
     def create_one(
@@ -197,6 +208,7 @@ def build_router(spec: TableSpec) -> APIRouter:
         body: dict[str, Any] = Body(default_factory=dict),
         session: Session = Depends(get_session),
     ):
+        spec = spec_provider()
         values = normalize(spec, body, partial=False)
         hinted_class = run_before_save(spec, values, session, None)
         if spec.class_scoped:
@@ -206,10 +218,13 @@ def build_router(spec: TableSpec) -> APIRouter:
                 if hinted_class is not None
                 else resolve_class_id(spec, request.query_params.get("classId") or body.get("classId"), session)
             )
-        row = model(**values)
+        columns, payload = split_values(spec, values)
+        row = spec.model(**columns)
+        if payload and spec.json_column:
+            setattr(row, spec.json_column, payload)
         session.add(row)
         session.flush()
-        return {"ok": True, "data": serialize(row, spec.output_keys)}
+        return {"ok": True, "data": serialize_row(spec, row)}
 
     @router.patch("/{row_id}")
     def update_one(
@@ -217,17 +232,25 @@ def build_router(spec: TableSpec) -> APIRouter:
         body: dict[str, Any] = Body(default_factory=dict),
         session: Session = Depends(get_session),
     ):
+        spec = spec_provider()
         row = _get_or_404(spec, session, row_id)
         values = normalize(spec, body, partial=True)
-        # 更新时忽略钩子推导出的 class_id：改一条联系人资料，不该把它挪到别的班
+        # 更新时忽略钩子推导出的 class_id：改一条资料，不该把它挪到别的班
         run_before_save(spec, values, session, row)
-        for key, value in values.items():
+        columns, payload = split_values(spec, values)
+        for key, value in columns.items():
             setattr(row, key, value)
+        if payload and spec.json_column:
+            # JSON 字段是**合并**而不是覆盖：没提交的字段保持原值
+            merged = dict(getattr(row, spec.json_column) or {})
+            merged.update(payload)
+            setattr(row, spec.json_column, merged)
         session.flush()
-        return {"ok": True, "data": serialize(row, spec.output_keys)}
+        return {"ok": True, "data": serialize_row(spec, row)}
 
     @router.delete("/{row_id}")
     def delete_one(row_id: int, session: Session = Depends(get_session)):
+        spec = spec_provider()
         row = _get_or_404(spec, session, row_id)
         if spec.soft_delete:
             row.deleted_at = utcnow()
@@ -235,20 +258,22 @@ def build_router(spec: TableSpec) -> APIRouter:
             session.delete(row)
         session.flush()
         # 写操作统一返回更新后的完整记录（约定见 03 §5.2）
-        return {"ok": True, "data": serialize(row, spec.output_keys) if spec.soft_delete else {"id": row_id}}
+        return {"ok": True, "data": serialize_row(spec, row) if spec.soft_delete else {"id": row_id}}
 
     @router.post("/{row_id}/restore")
     def restore_one(row_id: int, session: Session = Depends(get_session)):
-        row = session.get(model, row_id)
+        spec = spec_provider()
+        row = session.get(spec.model, row_id)
         if row is None:
             raise ApiError(NOT_FOUND, f"这条{spec.entity}不存在", status=404, detail={"id": row_id})
         if spec.soft_delete and getattr(row, "deleted_at", None) is not None:
             row.deleted_at = None
         session.flush()
-        return {"ok": True, "data": serialize(row, spec.output_keys)}
+        return {"ok": True, "data": serialize_row(spec, row)}
 
     @router.post("/batch")
     def batch(body: dict[str, Any] = Body(...), session: Session = Depends(get_session)):
+        spec = spec_provider()
         action = (body.get("action") or "").strip()
         ids = [as_int(raw, "ids") for raw in (body.get("ids") or [])]
         if not ids:
@@ -271,8 +296,13 @@ def build_router(spec: TableSpec) -> APIRouter:
             for row in rows:
                 row_values = dict(patch)
                 run_before_save(spec, row_values, session, row)
-                for key, value in row_values.items():
+                columns, payload = split_values(spec, row_values)
+                for key, value in columns.items():
                     setattr(row, key, value)
+                if payload and spec.json_column:
+                    merged = dict(getattr(row, spec.json_column) or {})
+                    merged.update(payload)
+                    setattr(row, spec.json_column, merged)
         else:
             raise ApiError(INVALID_VALUE, "action 只能是 delete 或 update", detail={"action": action})
 

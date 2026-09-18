@@ -117,9 +117,18 @@ def create_app() -> FastAPI:
     # （老师自己部署，我们不在现场，日志是唯一排查手段）
     setup_logging()
 
+    # 动态表（学生档案）：字段定义存在库里，表声明每次请求现算。
+    # 在这里注册 provider 而不是写进注册表常量 —— 老师加完字段不必重启服务。
+    from app.api.router import register_dynamic_routers
+    from app.schemas.registry import DYNAMIC_TABLES
+    from app.services.student_service import students_spec
+
+    DYNAMIC_TABLES["students"] = students_spec
+
     app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
     register_error_handlers(app)
     app.include_router(api_router)
+    register_dynamic_routers(app)
 
     if FRONTEND_DIR.exists():
         app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

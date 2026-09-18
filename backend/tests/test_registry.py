@@ -14,15 +14,22 @@ from __future__ import annotations
 
 import pytest
 
-from app.schemas.registry import TABLES
+from app.schemas.registry import all_specs
 from app.services.field_value import parse_value
 
-SPECS = list(TABLES.values())
+# 用 all_specs() 而不是 TABLES：**动态表（学生档案）也要被这套断言覆盖** ——
+# 它的字段定义是数据，更容易写歪，却最容易被漏掉
+SPECS = all_specs()
 SPEC_IDS = [spec.key for spec in SPECS]
 
 
 def columns_of(spec) -> set[str]:
-    return set(spec.model.__table__.columns.keys())
+    """模型上真实存在的字段：真实列 + 声明为 JSON 存储的字段。
+
+    JSON 字段（学生档案的 `extra` 内容）不是列，但同样是「存得住」的字段，
+    所以自洽检查必须把它们算进来。
+    """
+    return set(spec.model.__table__.columns.keys()) | set(spec.json_fields)
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=SPEC_IDS)

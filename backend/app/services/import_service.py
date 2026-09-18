@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.schemas.common import split_values
 from app.schemas.registry import TableSpec
 from app.services import table_io
 from app.services.field_value import apply_defaults, parse_value
@@ -219,7 +220,13 @@ def commit(
             spec.before_save(row_values, session, None)
             hinted_class = row_values.pop("class_id", None)
 
-        row = spec.model(**row_values)
+        # JSON 列的字段单独分流（学生档案的大部分字段在 extra 里）。
+        # 与新增/更新/批量走同一个实现：分流规则只有一处，日期也会被转成 ISO 字符串
+        columns, payload = split_values(spec, row_values)
+
+        row = spec.model(**columns)
+        if payload and spec.json_column:
+            setattr(row, spec.json_column, payload)
         if spec.class_scoped:
             row.class_id = hinted_class if hinted_class is not None else class_id
         session.add(row)

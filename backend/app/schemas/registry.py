@@ -79,6 +79,11 @@ class TableSpec:
     # 可以改 values、也可以抛 ApiError；新增、更新、导入提交三条路径都会调用它。
     # 用途举例：监护人把「学生姓名」解析成 student_id 并带出 class_id。
     before_save: Any = None
+    # 有些表的字段存在一个 JSON 列里（学生档案的 `extra`）：字段定义在运行时可变，
+    # 建成列就等于每加一个字段改一次表结构。声明后，搜索 / 排序 / 筛选 / 序列化
+    # 都会自动走 `json_extract`，不必为该表写一套特例。
+    json_column: str | None = None
+    json_fields: frozenset[str] = frozenset()
 
     @property
     def sortable_keys(self) -> frozenset[str]:
@@ -234,6 +239,18 @@ GUARDIAN = TableSpec(
 
 TABLES: dict[str, TableSpec] = {spec.key: spec for spec in (TODO, RULE, TEMPLATE, GUARDIAN)}
 
+# 字段定义存在数据库里的表（学生档案）：spec 每次请求**现算**。
+# 否则老师在字段管理里加了一个字段，要重启服务才生效 —— 而他并不知道要重启。
+DYNAMIC_TABLES: dict[str, Any] = {}
+
 
 def get_spec(key: str) -> TableSpec | None:
-    return TABLES.get(key)
+    if key in TABLES:
+        return TABLES[key]
+    provider = DYNAMIC_TABLES.get(key)
+    return provider() if provider else None
+
+
+def all_specs() -> list[TableSpec]:
+    """全部表声明（静态 + 动态现算），供 `/meta/registry` 与自洽测试使用。"""
+    return list(TABLES.values()) + [provider() for provider in DYNAMIC_TABLES.values()]
