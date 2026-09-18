@@ -108,6 +108,8 @@ export const api = {
    *  容量、床位占用都由后端算好，界面不自己数 —— 旧应用就是靠界面按 capacity 现算，
    *  容量读错一次整间房就都错了。 */
   dormTree: (classId) => request('/dorms/tree', { params: { classId } }).then((p) => p.data),
+  /** 值日看板：按房间 × 星期分组，分组在后端做（前端分组遇到分页会缺一块）。 */
+  dutyBoard: (classId) => request('/dorms/duties', { params: { classId } }).then((p) => p.data),
 
   /** 座位：看板与四个批量操作。
    *  随机/轮换/交换/回退都在服务端一次事务完成，并返回新的看板 —— 界面不自己算位置。

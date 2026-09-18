@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.db.engine import get_session
 from app.schemas.registry import DORM_BED
 from app.services.class_scope import resolve_class_id
-from app.services.dorm_service import room_tree, unassigned_boarders
+from app.services.dorm_service import duty_board, room_tree, unassigned_boarders
 
 router = APIRouter(prefix="/dorms", tags=["宿舍分布"])
 
@@ -37,3 +37,14 @@ def unassigned(request: Request, session: Session = Depends(get_session)):
     """住宿但还没有床位的学生（旧应用只在卡片视图里显示这个数，列表视图看不到）。"""
     class_id = resolve_class_id(DORM_BED, request.query_params.get("classId"), session)
     return {"ok": True, "data": unassigned_boarders(session, class_id)}
+
+
+@router.get("/duties")
+def duties(request: Request, session: Session = Depends(get_session)):
+    """值日看板：按房间分组，每间房列出 7 天各自的安排。
+
+    分组在服务端做 —— 旧应用是前端把整表拉下来分组，记录一多到分页就会缺一块，
+    而界面上看不出来。
+    """
+    class_id = resolve_class_id(DORM_BED, request.query_params.get("classId"), session)
+    return {"ok": True, "data": duty_board(session, class_id)}

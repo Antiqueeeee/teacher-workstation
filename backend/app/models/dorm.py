@@ -20,6 +20,10 @@
 
 from __future__ import annotations
 
+from __future__ import annotations
+
+from typing import Any
+
 from sqlalchemy import (
     Boolean,
     ForeignKey,
@@ -37,6 +41,39 @@ from app.db.base import Base, SoftDeleteMixin, TimestampMixin
 # 旧应用的兜底值（`Number(x.capacity) || 8`），新模型做成列的默认值，改不掉也不会消失
 DEFAULT_CAPACITY = 8
 MAX_CAPACITY = 40  # 一间宿舍住 40 人以上一定是填错了，挡在写入时
+
+# 星期词表（与旧应用一致：`WEEKDAYS.concat(['星期六','星期日'])`）。
+# 存的是**序号 1–7**，不是汉字：旧应用按 `indexOf` 排序，词表里出现一个没见过的写法
+# 就排到最前面；存序号则排序天然正确，汉字只用在显示上。
+WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+
+# 值日任务：旧应用 `:13957` 的固定 7 项
+DUTY_TASKS = (
+    "地面清扫",
+    "洗漱台清洁",
+    "垃圾清运",
+    "窗台与阳台",
+    "床铺内务检查",
+    "门后与柜面",
+    "公共走廊",
+)
+
+# 检查结果：旧应用 `:13961`，默认「合格」
+DUTY_RESULTS = ("优秀", "合格", "待改进")
+
+
+def weekday_number(text: Any) -> int | None:
+    """把「星期一」这类写法转成 1–7；认不出来返回 None。"""
+    cleaned = str(text or "").strip()
+    if cleaned in WEEKDAYS:
+        return WEEKDAYS.index(cleaned) + 1
+    return None
+
+
+def weekday_label(number: int | None) -> str:
+    if number is None or not 1 <= number <= len(WEEKDAYS):
+        return ""
+    return WEEKDAYS[number - 1]
 
 
 class DormRoom(Base, TimestampMixin, SoftDeleteMixin):
@@ -148,4 +185,66 @@ class DormBed(Base, TimestampMixin):
         但床位号仍被占着 —— 所以这里如实标出来，让老师点一下腾空，
         而不是让一个查不到的学生继续占着床位。
         """
+        return self.student is not None and self.student.deleted_at is not None
+
+
+class DormDuty(Base, TimestampMixin, SoftDeleteMixin):
+    """一条宿舍值日安排：某房间、某天、某人做什么。
+
+    与旧应用（`:13905`）的三处结构差别：
+
+    1. **房间是引用**（`room_id` 外键），不是「楼栋 + 房号」两个字符串。
+       旧应用的楼栋/房号下拉只是从 `dorms` 里复制了一份选项、**不校验房间是否存在**，
+       于是能造出指向不存在的宿舍的值日安排。
+    2. **值日学生是引用**（`student_id`），不是只存姓名 —— 旧应用存姓名，
+       学生一改名这条记录就与人对不上了。
+    3. **星期存序号**（1–7）而不是汉字：旧应用按 `indexOf` 排序，
+       词表里出现没见过的写法就排最前面。
+    """
+
+    __tablename__ = "dorm_duties"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    class_id: Mapped[int] = mapped_column(
+        ForeignKey("classes.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    room_id: Mapped[int] = mapped_column(
+        ForeignKey("dorm_rooms.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # 星期存**汉字**（老师手里的表就是汉字，导入导出直接对得上），另外维护一个
+    # 序号列专门用来排序：汉字排序是按字形码位来的（星期五 会排在 星期一 前面），
+    # 旧应用靠 indexOf 换算，词表里出现没见过的写法就排到最前。
+    weekday: Mapped[str] = mapped_column(String(8), nullable=False)
+    weekday_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    student_id: Mapped[int | None] = mapped_column(
+        ForeignKey("students.id", ondelete="SET NULL"), index=True, default=None
+    )
+    student_name: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    task: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    # 检查人通常是舍长，也可能是检查的老师/生活委员，所以只作留档的文本
+    checker: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    result: Mapped[str] = mapped_column(String(16), default="合格", nullable=False)
+    note: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+    room = relationship("DormRoom", lazy="selectin")
+    student = relationship("Student", lazy="selectin")
+
+    @property
+    def building(self) -> str:
+        return self.room.building if self.room else ""
+
+    @property
+    def room_no(self) -> str:
+        return self.room.room_no if self.room else ""
+
+    @property
+    def room_label(self) -> str:
+        return self.room.label if self.room else ""
+
+    @property
+    def sno(self) -> str:
+        return self.student.sno if self.student else ""
+
+    @property
+    def orphan(self) -> bool:
         return self.student is not None and self.student.deleted_at is not None

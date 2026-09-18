@@ -14,6 +14,7 @@ import { icon } from './core/icons.js';
 import { currentKey, register, setDefault, start } from './core/router.js';
 import { getSpec, setRegistry } from './core/store.js';
 import { attendancePageDef } from './pages/attendance.js';
+import { dormDutyPageDef } from './pages/dorm-duty.js';
 import { dormsPageDef } from './pages/dorms.js';
 import { guardiansPageDef } from './pages/guardians.js';
 import { homeworkPageDef } from './pages/homework.js';
@@ -32,6 +33,7 @@ const PAGE_DEFS = [
   homeworkPageDef,
   scoresPageDef,
   dormsPageDef,
+  dormDutyPageDef,
   seatsPageDef,
   todosPageDef,
   rulesPageDef,

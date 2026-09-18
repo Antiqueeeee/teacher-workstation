@@ -75,12 +75,23 @@ export function readForm(root, spec) {
 /**
  * 打开新增/编辑表单。返回保存后的记录；用户取消则返回 null。
  */
+  /** 字段的初始值：编辑时用记录里的值（空就是空），新增时用预填值或声明里的默认值。
+   *
+   * `row` 没有 id 时当作**预填**（例如值日看板上点某天新增，房间与星期已经定了）——
+   * 判定编辑与否只能看 id，不能只看「有没有传对象」。
+   */
+  function initialValue(field, row, isEdit) {
+    if (isEdit) return row[field.k];
+    const given = row ? row[field.k] : undefined;
+    return given === undefined || given === null || given === '' ? field.default : given;
+  }
+
 export function openForm(spec, row = null) {
-  const isEdit = Boolean(row);
+  const isEdit = Boolean(row && row.id);
   return new Promise((resolve) => {
     const fields = spec.fields
       .filter((field) => field.editable)
-      .map((field) => fieldHtml(field, row ? row[field.k] : field.default))
+      .map((field) => fieldHtml(field, initialValue(field, row, isEdit)))
       .join('');
 
     openModal({
