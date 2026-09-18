@@ -58,8 +58,16 @@ function noticesHtml(preview) {
     parts.push(`<div class="notice">这些列没认出来，会被忽略：${esc(preview.unknownHeaders.join('、'))}。</div>`);
   }
   if (preview.summary.problem) {
+    // 预览只显示前若干行，所以必须把**问题行号**直接列出来 ——
+    // 否则「见下方红字」会指向用户根本看不到的地方
+    const problemRows = preview.rows
+      .filter((row) => !row.ok)
+      .map((row) => row.row)
+      .slice(0, 12)
+      .join('、');
+    const more = preview.summary.problem > 12 ? ` 等（共 ${preview.summary.problem} 行）` : '';
     parts.push(
-      `<div class="notice">有 ${preview.summary.problem} 行没通过校验（见下方红字）。请先在表格里改好再重新上传 —— 整批要么全进、要么全不进，不会进一半。</div>`,
+      `<div class="notice">有 ${preview.summary.problem} 行没通过校验：第 ${problemRows} 行${more}。请先在表格里改好再重新上传 —— 整批要么全进、要么全不进，不会进一半。</div>`,
     );
   }
   return parts.join('');

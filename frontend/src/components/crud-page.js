@@ -1,16 +1,18 @@
 /**
  * 通用列表页：完全由注册表的声明驱动，页面自身几乎不写代码。
  *
- * 一条来自旧应用教训的纪律：**筛选/搜索只重绘列表区，不整页重绘**。
- * 旧应用每次操作都整页 rerender，输入框被重建 —— 打字打到一半焦点就丢了。
- * 这里把「查询条件」放在内存、把「列表区」做成独立容器，输入框全程不重建。
+ * 两条从旧应用教训里来的纪律：
+ * 1. **筛选/搜索只重绘列表区，不整页重绘** —— 旧应用每次操作都整页 rerender，
+ *    输入框被重建，打字打到一半焦点就丢。
+ * 2. **软删除必须有出口** —— 列表里能勾「显示已删除」，已删记录带恢复按钮；
+ *    否则「删除后可以找回」就是一句空话（评审抓到过这个问题）。
  */
 
 import { api, triggerDownload } from '../core/api.js';
 import { esc } from '../core/dom.js';
 import { cellValue, DASH, text } from '../core/format.js';
 import { icon } from '../core/icons.js';
-import { getListState, getSpec, toParams } from '../core/store.js';
+import { getListState, toParams } from '../core/store.js';
 import { openForm } from './form.js';
 import { openImport } from './import-modal.js';
 import { confirmBox, toast } from './ui.js';
@@ -54,6 +56,10 @@ function toolbarHtml(spec, state) {
       <button class="btn" type="button" data-import>${icon('import', 16)} 导入</button>
       <button class="btn" type="button" data-export>${icon('export', 16)} 导出</button>
       <a class="btn" href="${api.templateUrl(spec.key)}" download title="下载导入模板">${icon('template', 16)} 模板</a>
+      <label class="checkbox-row" title="删除的记录会保留在库里，勾选后才能看到并恢复">
+        <input type="checkbox" data-show-deleted${state.includeDeleted ? ' checked' : ''}>
+        <span class="muted">显示已删除</span>
+      </label>
     </div>`;
 }
 
@@ -86,6 +92,18 @@ function sortMark(state, key) {
   return `<span class="sort-mark">${state.dir === 'asc' ? '▲' : '▼'}</span>`;
 }
 
+function rowActions(row) {
+  if (row.deleted_at) {
+    return `<button class="btn btn-sm" type="button" data-restore="${row.id}">恢复</button>`;
+  }
+  return `<button class="btn btn-sm" type="button" data-edit="${row.id}">编辑</button>
+    <button class="btn btn-sm btn-ghost" type="button" data-del="${row.id}">删除</button>`;
+}
+
+function deletedBadge(row) {
+  return row.deleted_at ? '<span class="badge badge-rose">已删除</span> ' : '';
+}
+
 function tableHtml(spec, rows, state) {
   const head = spec.columns
     .map((column) =>
@@ -108,10 +126,7 @@ function tableHtml(spec, rows, state) {
         .join('');
       return `<tr>
         ${cells}
-        <td class="actions">
-          <button class="btn btn-sm" type="button" data-edit="${row.id}">编辑</button>
-          <button class="btn btn-sm btn-ghost" type="button" data-del="${row.id}">删除</button>
-        </td>
+        <td class="actions">${deletedBadge(row)}${rowActions(row)}</td>
       </tr>`;
     })
     .join('');
@@ -119,13 +134,13 @@ function tableHtml(spec, rows, state) {
   return `
     <div class="table-wrap only-wide">
       <table class="table">
-        <thead><tr>${head}<th style="width:130px"></th></tr></thead>
+        <thead><tr>${head}<th style="width:140px"></th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>`;
 }
 
-/** 窄屏卡片视图：手机上一行信息读完，动作按钮放在卡片底部（拇指够得到）。 */
+/** 窄屏卡片视图：一行信息读完，动作按钮放在卡片底部（拇指够得到）。 */
 function cardsHtml(spec, rows) {
   const [primary, ...rest] = spec.columns;
   return `
@@ -143,12 +158,10 @@ function cardsHtml(spec, rows) {
           return `<div class="person-card">
             <div class="card-head">
               <strong>${esc(cellValue(spec.fields.find((f) => f.k === primary.k), row[primary.k]))}</strong>
+              ${deletedBadge(row)}
             </div>
             ${details}
-            <div class="toolbar" style="margin:10px 0 0">
-              <button class="btn btn-sm" type="button" data-edit="${row.id}">编辑</button>
-              <button class="btn btn-sm btn-ghost" type="button" data-del="${row.id}">删除</button>
-            </div>
+            <div class="toolbar" style="margin:10px 0 0">${rowActions(row)}</div>
           </div>`;
         })
         .join('')}
@@ -160,7 +173,7 @@ function listHtml(spec, rows, meta, state) {
     const filtered = state.q || Object.values(state.filters || {}).some(Boolean);
     return `<div class="empty">
       <strong>${filtered ? '没有符合条件的记录' : `还没有${esc(spec.entity)}`}</strong>
-      ${filtered ? '试试清空搜索词或筛选条件。' : `点上面的「新增」开始记，或把已有的表格「导入」进来。`}
+      ${filtered ? '试试清空搜索词或筛选条件。' : '点上面的「新增」开始记，或把已有的表格「导入」进来。'}
     </div>`;
   }
   const pages = Math.max(1, Math.ceil(meta.total / meta.pageSize));
@@ -197,18 +210,28 @@ export function createCrudPage({ specKey, spec, group, iconName = 'list' }) {
     }
   }
 
+  /**
+   * 只重绘列表区：输入框、筛选下拉都不重建，所以打字不会丢焦点。
+   * 失败要**明确告知并保留原内容** —— 曾经的写法是静默失败：
+   * 翻页/切筛选点了没反应、不报错、内容还是旧的。
+   */
   async function refreshList(root) {
     const area = root.querySelector('[data-list]');
-    const list = await api.list(spec.key, params());
-    rowsById = new Map(list.rows.map((row) => [String(row.id), row]));
-    area.innerHTML = listHtml(spec, list.rows, list.meta, state);
-    const kpi = root.querySelector('[data-kpi]');
-    const stats = await loadStats();
-    if (kpi && stats) kpi.innerHTML = kpiHtml(spec, stats);
+    try {
+      const list = await api.list(spec.key, params());
+      rowsById = new Map(list.rows.map((row) => [String(row.id), row]));
+      area.innerHTML = listHtml(spec, list.rows, list.meta, state);
+      const kpi = root.querySelector('[data-kpi]');
+      const stats = await loadStats();
+      if (kpi && stats) kpi.innerHTML = kpiHtml(spec, stats);
+    } catch (error) {
+      toast(error.message, 'err', 7000);
+    }
   }
 
   function bindEvents(root) {
     let timer = null;
+
     root.addEventListener('input', (event) => {
       if (!event.target.matches('[data-search]')) return;
       clearTimeout(timer);
@@ -229,6 +252,11 @@ export function createCrudPage({ specKey, spec, group, iconName = 'list' }) {
       }
       if (target.matches('[data-page-size]')) {
         state.pageSize = Number(target.value);
+        state.page = 1;
+        refreshList(root);
+      }
+      if (target.matches('[data-show-deleted]')) {
+        state.includeDeleted = target.checked;
         state.page = 1;
         refreshList(root);
       }
@@ -268,18 +296,30 @@ export function createCrudPage({ specKey, spec, group, iconName = 'list' }) {
         return;
       }
 
+      const restore = target.closest('[data-restore]');
+      if (restore) {
+        try {
+          await api.restore(spec.key, restore.dataset.restore);
+          toast('已恢复');
+          refreshList(root);
+        } catch (error) {
+          toast(error.message, 'err', 6000);
+        }
+        return;
+      }
+
       const del = target.closest('[data-del]');
       if (del) {
         const row = rowsById.get(del.dataset.del);
         const label = text(row?.[spec.columns[0].k]);
-        const yes = await confirmBox(`确定删除「${esc(label)}」吗？删除后可在数据目录里找回（软删除）。`, {
-          okText: '删除',
-          danger: true,
-        });
+        const yes = await confirmBox(
+          `确定删除「${esc(label)}」吗？删除后记录仍留在库里，勾选工具栏的「显示已删除」可以恢复。`,
+          { okText: '删除', danger: true },
+        );
         if (!yes) return;
         try {
           await api.remove(spec.key, del.dataset.del);
-          toast('已删除');
+          toast('已删除，可在「显示已删除」里恢复');
           refreshList(root);
         } catch (error) {
           toast(error.message, 'err', 6000);

@@ -85,6 +85,9 @@ class TableSpec:
         keys += [c.k for c in self.columns]
         keys += [f.k for f in self.fields if f.k not in {c.k for c in self.columns}]
         keys += [k for k in self.extra_keys if k not in keys]
+        if self.soft_delete:
+            # 前端要靠它区分「已删除」并给出恢复入口（软删除不能没有出口）
+            keys.append("deleted_at")
         keys += ["created_at", "updated_at"]
         return tuple(dict.fromkeys(keys))
 
@@ -142,7 +145,7 @@ RULE = TableSpec(
         ColumnSpec("content", "内容"),
     ),
     fields=(
-        FieldSpec("category", "类别", type="select", options=RULE_CATEGORIES, default="其他"),
+        FieldSpec("category", "类别", type="select", options=RULE_CATEGORIES),
         FieldSpec("title", "标题", required=True),
         FieldSpec("version", "版本"),
         FieldSpec("effective_from", "生效日期", type="date"),

@@ -107,13 +107,10 @@ def _read_xlsx(content: bytes) -> list[list[Any]]:
     workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     try:
         sheet = workbook[workbook.sheetnames[0]]  # 只看第一个工作表
-        rows: list[list[Any]] = []
-        for row in sheet.iter_rows(values_only=True):
-            if any(not is_blank(cell) for cell in row):
-                rows.append(list(row))
-            elif rows:
-                break  # 表头之后遇到空行就停，不读尾部空白
-        return rows
+        # 空行**跳过**而不是截断：老师的表格中间留个空行很常见，
+        # 遇到空行就 break 会把后面所有数据静默丢掉（CSV 那条路一直是跳过的，
+        # 两种格式两种行为本身就是隐患）
+        return [list(row) for row in sheet.iter_rows(values_only=True) if any(not is_blank(cell) for cell in row)]
     finally:
         workbook.close()
 

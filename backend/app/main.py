@@ -21,6 +21,7 @@ from app.api.router import router as api_router
 from app.config import APP_NAME, APP_VERSION, FRONTEND_DIR, ensure_dirs
 from app.db.engine import SessionLocal
 from app.db.migrate import upgrade_to_head
+from app.logging_setup import setup_logging
 from app.models.class_ import Class
 
 logger = logging.getLogger("teacher-workstation")
@@ -103,6 +104,10 @@ def register_error_handlers(app: FastAPI) -> None:
 
 
 def create_app() -> FastAPI:
+    # 日志最早开：后面任何一步出问题，日志里都要有线索
+    # （老师自己部署，我们不在现场，日志是唯一排查手段）
+    setup_logging()
+
     app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
     register_error_handlers(app)
     app.include_router(api_router)

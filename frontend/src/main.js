@@ -11,7 +11,7 @@ import { api } from './core/api.js';
 import { esc, qs } from './core/dom.js';
 import { errorCard } from './core/errors.js';
 import { icon } from './core/icons.js';
-import { register, setDefault, start } from './core/router.js';
+import { currentKey, register, setDefault, start } from './core/router.js';
 import { getSpec, setRegistry } from './core/store.js';
 import { rulesPageDef } from './pages/rules.js';
 import { templatesPageDef } from './pages/templates.js';
@@ -23,7 +23,8 @@ const PAGE_DEFS = [todosPageDef, rulesPageDef, templatesPageDef];
 let pages = [];
 
 function currentPage() {
-  const key = (window.location.hash || '').replace(/^#/, '');
+  // 复用 router 的 hash 解析，避免同一逻辑两份实现
+  const key = currentKey();
   return pages.find((page) => page.key === key) || pages[0];
 }
 

@@ -35,5 +35,11 @@ def resolve_class_id(spec: TableSpec, raw: Any, session: Session) -> int | None:
     if not ids:
         raise ApiError(CLASS_ID_REQUIRED, "还没有班级，请先创建班级", status=409)
     if len(ids) > 1:
-        raise ApiError(CLASS_ID_REQUIRED, "存在多个班级，请指定 classId", status=409)
+        # 界面上暂时没有班级切换器（多班在后续阶段），所以这句话必须说实话，
+        # 不能让用户去找一个不存在的东西
+        raise ApiError(
+            CLASS_ID_REQUIRED,
+            "这份数据里有多个班级，而当前版本还没有班级切换界面（多班在后续阶段）。",
+            status=409,
+        )
     return ids[0]

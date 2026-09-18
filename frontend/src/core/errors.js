@@ -6,11 +6,13 @@
  * （网络断了、服务没起、静态 404 之类），并且一律给出下一步该怎么办。
  */
 
+import { esc } from './dom.js';
+
 export const FRIENDLY = {
   NETWORK: '连不上服务。请确认服务还在运行，手机与电脑在同一局域网。',
   TABLE_NOT_FOUND: '这个表不存在，可能是页面缓存过期了，刷新一下试试。',
   NOT_FOUND: '这条记录不存在，可能已被删除。',
-  CLASS_ID_REQUIRED: '存在多个班级，请先在顶部选择班级。',
+  CLASS_ID_REQUIRED: '这份数据里有多个班级，而当前版本还没有班级切换界面（多班在后续阶段）。',
   EXPORT_TOO_LARGE: '命中的记录太多，请先用筛选缩小范围再导出。',
   NO_HEADER_MATCHED: '表头一个字段都没认出来。请先下载导入模板对照列名，或确认没有选错表。',
   EMPTY_FILE: '文件是空的，没有读到内容。',
@@ -34,11 +36,14 @@ export function describeError(error) {
  */
 export function errorCard(error) {
   const title = error?.code ? `出错了（${error.code}）` : '出错了';
-  const detail = error?.detail ? `<pre class="error-detail">${JSON.stringify(error.detail, null, 2)}</pre>` : '';
+  // detail 里可能回带用户输入（比如筛选值），所以一定要转义 —— 否则能在错误卡片里注入标签
+  const detail = error?.detail
+    ? `<pre class="error-detail">${esc(JSON.stringify(error.detail, null, 2))}</pre>`
+    : '';
   return `
     <div class="card error-card">
       <h3>${title}</h3>
-      <p>${describeError(error)}</p>
+      <p>${esc(describeError(error))}</p>
       ${detail}
       <button class="btn" data-action="retry">重试</button>
     </div>`;

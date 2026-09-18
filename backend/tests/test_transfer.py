@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import io
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 CSV_MIME = "text/csv"
 
@@ -193,3 +193,43 @@ def test_export_rejects_unknown_table(client):
     response = client.get("/api/v1/transfer/export/nope.xlsx")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "TABLE_NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
+# 导入路径的回归测试（评审发现的两处「不会报错、数据却会变歪」）
+# ---------------------------------------------------------------------------
+
+
+def test_preview_and_commit_agree_on_defaults(client):
+    """预览里补的默认值，提交后必须也是同一个 —— 曾经预览显示「中」、库里存的是空串。"""
+    csv_text = "内容,截止日期\n默认值一致性测试,2026-10-09\n"
+    data = _upload(client, "todos", "t.csv", csv_text.encode("utf-8")).json()["data"]
+    assert data["rows"][0]["values"]["priority"] == "中"  # 预览补了默认值
+
+    created = _commit(client, "todos", [data["rows"][0]["values"]]).json()["data"]
+    assert created["created"] == 1
+
+    listed = client.get("/api/v1/todos", params={"q": "默认值一致性测试"}).json()
+    assert listed["data"][0]["priority"] == "中"  # 库里也是「中」
+
+    # 用默认值筛选筛得到它 —— 这才说明两条路径产出的数据是同一种
+    filtered = client.get(
+        "/api/v1/todos", params={"q": "默认值一致性测试", "filter.priority": "中"}
+    ).json()
+    assert filtered["meta"]["total"] == 1
+
+
+def test_xlsx_blank_row_does_not_truncate_later_rows(client):
+    """表格中间的空行不能让后面的数据消失（CSV 一直是跳过，xlsx 曾经是截断）。"""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["内容", "截止日期"])
+    sheet.append(["空行前", "2026-10-10"])
+    sheet.append([None, None])
+    sheet.append(["空行后", "2026-10-11"])
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+
+    data = _upload(client, "todos", "带空行.xlsx", buffer.getvalue()).json()["data"]
+    assert data["summary"]["total"] == 2
+    assert {row["values"]["content"] for row in data["rows"]} == {"空行前", "空行后"}

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas.registry import TableSpec
 from app.services import table_io
-from app.services.field_value import parse_value
+from app.services.field_value import apply_defaults, parse_value
 
 MAX_ROWS = 2000  # 一次导入的行数上限：防止误传一个几万行的总表
 
@@ -74,12 +74,8 @@ def normalize_rows(
             else:
                 values[field_key] = value
 
-        # 选填字段整列缺失时补默认值，保证写入的是一份完整记录
-        for field_spec in spec.fields:
-            if not field_spec.editable or field_spec.k in values:
-                continue
-            if not field_spec.required and field_spec.default is not None:
-                values[field_spec.k] = field_spec.default
+        # 缺省值补齐与 CRUD 新增、导入提交共用同一实现（见 field_value.apply_defaults）
+        apply_defaults(spec.fields, values)
 
         key = _dedupe_key(spec, values)
         if key is not None and not issues:
@@ -176,7 +172,9 @@ def _validate(spec: TableSpec, rows: list[dict[str, Any]]) -> tuple[list[dict[st
         if issues:
             bad.append({"row": index, "values": raw, "issues": issues})
         else:
-            good.append(values)
+            # 默认值补齐与 CRUD 新增共用同一实现 —— 曾经预览补了、提交没补，
+            # 于是「预览显示优先级=中、库里存的是空」
+            good.append(apply_defaults(spec.fields, values))
 
     return good, bad
 

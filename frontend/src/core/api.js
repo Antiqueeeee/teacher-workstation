@@ -71,6 +71,8 @@ export const api = {
     request(`/${table}`, { method: 'POST', body: values, params }).then((p) => p.data),
   update: (table, id, values) => request(`/${table}/${id}`, { method: 'PATCH', body: values }).then((p) => p.data),
   remove: (table, id) => request(`/${table}/${id}`, { method: 'DELETE' }).then((p) => p.data),
+  /** 恢复软删除的记录 —— 删除确认框里承诺过「可以找回」，就得真有入口。 */
+  restore: (table, id) => request(`/${table}/${id}/restore`, { method: 'POST' }).then((p) => p.data),
   batch: (table, payload) => request(`/${table}/batch`, { method: 'POST', body: payload }).then((p) => p.data),
 
   /** 上传文件做导入预览（multipart，不能用 JSON 那条路径）。 */

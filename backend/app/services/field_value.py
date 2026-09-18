@@ -117,3 +117,22 @@ def parse_value(field: FieldSpec, raw: Any) -> tuple[Any, ValueIssue | None]:
     if field.type == "date":
         return _parse_date(field, raw)
     return _parse_text(field, raw)
+
+
+def apply_defaults(fields: tuple[FieldSpec, ...], values: dict[str, Any]) -> dict[str, Any]:
+    """按声明补齐缺省值 —— **唯一实现**，CRUD 新增、导入预览、导入提交三处共用。
+
+    必须共用：曾经预览补了默认值、提交没补，于是出现「预览显示优先级=中、
+    库里存的是空字符串」——筛选和 KPI 都按「中」查，查不到它。同一规则两处实现，
+    结果就是两条路径产生两种数据。
+
+    默认值本身也过一遍解析，防止「默认值不在词表里」这种声明错误
+    （另有 `tests/test_registry.py` 的自洽测试在 CI 里兜底）。
+    """
+    for field_spec in fields:
+        if not field_spec.editable or field_spec.k in values or field_spec.default is None:
+            continue
+        parsed, issue = parse_value(field_spec, field_spec.default)
+        if issue is None:
+            values[field_spec.k] = parsed
+    return values

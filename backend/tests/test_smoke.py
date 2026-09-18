@@ -117,3 +117,56 @@ def test_chinese_content_roundtrip(client):
     )
     assert created.status_code == 201, created.text
     assert created.json()["data"]["title"] == "早读要求"
+
+
+# ---------------------------------------------------------------------------
+# 下面四组是评审阶段发现的问题的回归测试。
+# 它们守的都是「不会报错、但数据会变歪」这一类 —— 最贵的那种错。
+# ---------------------------------------------------------------------------
+
+
+def test_stats_shares_the_same_conditions_as_list(client):
+    """KPI 与列表必须同一套条件，否则搜完之后看到的总数不是搜索结果的总数。"""
+    client.post("/api/v1/todos", json={"content": "口径测试-高", "priority": "高"})
+    client.post("/api/v1/todos", json={"content": "口径测试-低", "priority": "低"})
+    params = {"q": "口径测试", "filter.priority": "高"}
+
+    listed = client.get("/api/v1/todos", params=params).json()
+    stats = client.get("/api/v1/todos/stats", params=params).json()["data"]
+
+    assert listed["meta"]["total"] == 1
+    assert stats["total"] == 1  # 曾经这里是 2（stats 没认 q 与 filter）
+    assert stats["groups"]["priority"] == {"高": 1}
+
+
+def test_boolean_group_label_uses_chinese(client):
+    """分组键要走「是/否」词表，不能冒出 True/False。"""
+    client.post("/api/v1/todos", json={"content": "布尔分组测试", "done": True})
+    stats = client.get("/api/v1/todos/stats", params={"q": "布尔分组测试"}).json()["data"]
+    assert stats["groups"]["done"] == {"是": 1}
+
+
+def test_soft_deleted_row_can_be_listed_and_restored(client):
+    """软删除必须留出口 —— 删除确认框里对用户承诺过「可以找回」。"""
+    created = client.post("/api/v1/todos", json={"content": "回收站测试"}).json()["data"]
+    client.delete(f"/api/v1/todos/{created['id']}")
+    assert client.get("/api/v1/todos", params={"q": "回收站测试"}).json()["meta"]["total"] == 0
+
+    shown = client.get("/api/v1/todos", params={"q": "回收站测试", "includeDeleted": "1"}).json()
+    assert shown["meta"]["total"] == 1
+
+    restored = client.post(f"/api/v1/todos/{created['id']}/restore").json()["data"]
+    assert restored["id"] == created["id"]
+    assert client.get("/api/v1/todos", params={"q": "回收站测试"}).json()["meta"]["total"] == 1
+
+
+def test_batch_skips_deleted_rows(client):
+    """批量操作不能碰到界面上看不见的已删记录。"""
+    created = client.post("/api/v1/todos", json={"content": "批量软删测试"}).json()["data"]
+    client.delete(f"/api/v1/todos/{created['id']}")
+
+    result = client.post(
+        "/api/v1/todos/batch",
+        json={"action": "update", "ids": [created["id"]], "patch": {"content": "不该被改"}},
+    ).json()["data"]
+    assert result == {"requested": 1, "affected": 0}

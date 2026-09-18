@@ -39,13 +39,10 @@ export function getListState(spec) {
       dir: spec.defaultSort?.dir < 0 ? 'desc' : 'asc',
       page: 1,
       pageSize: 20,
+      includeDeleted: false,
     });
   }
   return store.listState.get(spec.key);
-}
-
-export function resetListState(spec) {
-  store.listState.delete(spec.key);
 }
 
 /** 把查询状态转成接口参数（空值会被 api 层丢掉）。 */
@@ -57,6 +54,7 @@ export function toParams(state) {
     page: state.page,
     pageSize: state.pageSize,
   };
+  if (state.includeDeleted) params.includeDeleted = 1;
   if (store.currentClassId) params.classId = store.currentClassId;
   for (const [key, value] of Object.entries(state.filters || {})) {
     params[`filter.${key}`] = value;

@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, Date, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin
@@ -28,5 +28,4 @@ class Todo(Base, TimestampMixin, SoftDeleteMixin):
     due_date: Mapped[date | None] = mapped_column(Date, default=None)
     priority: Mapped[str] = mapped_column(String(8), default="中", nullable=False)
     done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    done_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     note: Mapped[str] = mapped_column(Text, default="", nullable=False)

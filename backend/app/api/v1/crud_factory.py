@@ -4,14 +4,21 @@
 全部由这里生成 —— 避免旧应用那种「每个模块手写一遍列表/表单/校验」的重复。
 
 接口（见 `docs/改造方案/03` §5.1）：
-    GET    /{key}              列表：q / sort / dir / page / pageSize / classId / filter.<列>
-    GET    /{key}/schema       该表的声明（前端可直接当 cfg 用）
-    GET    /{key}/stats        计数统计（KPI 卡片用）
-    GET    /{key}/{id}         单条
-    POST   /{key}              新增
-    PATCH  /{key}/{id}         局部更新
-    DELETE /{key}/{id}         软删除
-    POST   /{key}/batch        批量：{"action": "delete"|"update", "ids": [...], "patch": {...}}
+    GET    /{key}                列表：q / sort / dir / page / pageSize / classId
+                                 / filter.<列> / includeDeleted
+    GET    /{key}/schema         该表的声明（前端可直接当 cfg 用）
+    GET    /{key}/stats          计数统计（与列表**同一套条件**，否则 KPI 和列表会对不上）
+    GET    /{key}/{id}           单条
+    POST   /{key}                新增
+    PATCH  /{key}/{id}           局部更新
+    DELETE /{key}/{id}           软删除
+    POST   /{key}/{id}/restore   恢复软删除（软删除必须留出口，否则「能找回」是空话）
+    POST   /{key}/batch          批量：{"action": "delete"|"update", "ids": [], "patch": {}}
+
+三条纪律，改这个文件时别丢：
+1. 字段语义只在 `services/field_value.py` 实现一次（校验、默认值都从那里来）；
+2. 筛选/统计/导出共用 `services/table_query.py` 的条件构造；
+3. 可见性（软删除）只有 `_visible_or_none` / `_visible_rows` 两处判定。
 """
 
 from __future__ import annotations
@@ -34,17 +41,15 @@ from app.db.engine import get_session
 from app.schemas.common import page_meta, serialize
 from app.schemas.registry import FieldSpec, TableSpec
 from app.services.class_scope import resolve_class_id
-from app.services.field_value import CODE_MISSING_REQUIRED, parse_value
-from app.services.table_query import build_list_query
+from app.services.field_value import CODE_MISSING_REQUIRED, apply_defaults, parse_value
+from app.services.params import as_int
+from app.services.table_query import build_conditions, build_list_query
+
+# 这些键由系统管理，出现在提交体里不算「未知字段」，但也不允许客户端直接改
+RESERVED_KEYS = frozenset({"id", "class_id", "classId", "created_at", "updated_at", "deleted_at"})
+
 
 # --------------------------------------------------------------------------- 校验
-
-
-def _as_int(raw: Any, label: str) -> int:
-    try:
-        return int(str(raw).strip())
-    except (TypeError, ValueError):
-        raise ApiError(INVALID_VALUE, f"「{label}」需要是整数", detail={"value": raw}) from None
 
 
 def _short(raw: Any) -> str | None:
@@ -70,12 +75,13 @@ def coerce(field: FieldSpec, raw: Any) -> Any:
 def normalize(spec: TableSpec, payload: dict[str, Any], *, partial: bool) -> dict[str, Any]:
     """校验整个提交体，返回可直接赋给模型的值。
 
-    - `partial=False`（新增）：必填项缺失即报错，其余字段落声明里的默认值；
-    - `partial=True`（更新）：只处理传了的字段。
+    - `partial=False`（新增）：必填项缺失即报错，其余按声明补默认值；
+    - `partial=True`（更新）：只处理传了的字段，**不补默认值**
+      （否则一次改「备注」会把没传的字段全重置成默认值）。
     """
     known = spec.field_map
     for key in payload:
-        if key in {"id", "class_id", "classId", "created_at", "updated_at"}:
+        if key in RESERVED_KEYS:
             continue
         if key not in known:
             raise ApiError(UNKNOWN_FIELD, f"未知字段：{key}", detail={"field": key})
@@ -86,31 +92,43 @@ def normalize(spec: TableSpec, payload: dict[str, Any], *, partial: bool) -> dic
             continue
         if key in payload:
             values[key] = coerce(field, payload[key])
-        elif not partial:
-            if field.required:
-                raise ApiError(FIELD_REQUIRED, f"「{field.label}」是必填项", detail={"field": key})
-            if field.default is not None:
-                values[key] = field.default
-    return values
+        elif not partial and field.required:
+            raise ApiError(FIELD_REQUIRED, f"「{field.label}」是必填项", detail={"field": key})
+
+    # 默认值补齐与导入预览/提交共用同一实现 —— 曾经两边不一致，
+    # 出现「预览显示优先级=中、库里存的是空」这种数据错位
+    return values if partial else apply_defaults(spec.fields, values)
 
 
 # --------------------------------------------------------------------------- 辅助
 
 
-def _resolve_class_id(spec: TableSpec, raw: Any, session: Session) -> int | None:
-    """确定本次操作属于哪个班级。
+def _visible_or_none(spec: TableSpec, session: Session, row_id: int):
+    """按 id 取一条**未删除**记录；不存在或已删除都返回 None。
 
-    实现只有一份，在 `services/class_scope.py` —— 导入接口用的是同一个函数。
-    两个入口各写一遍「该写进哪个班」是迟早要不一致的那类规则。
+    软删除的可见性判定只有这里一处 —— 批量操作曾经绕过它，
+    导致能改到界面上看不见的已删记录。
     """
-    return resolve_class_id(spec, raw, session)
+    row = session.get(spec.model, row_id)
+    if row is None:
+        return None
+    if spec.soft_delete and getattr(row, "deleted_at", None) is not None:
+        return None
+    return row
 
 
 def _get_or_404(spec: TableSpec, session: Session, row_id: int):
-    row = session.get(spec.model, row_id)
-    if row is None or (spec.soft_delete and getattr(row, "deleted_at", None) is not None):
+    row = _visible_or_none(spec, session, row_id)
+    if row is None:
         raise ApiError(NOT_FOUND, f"这条{spec.entity}不存在，可能已被删除", status=404, detail={"id": row_id})
     return row
+
+
+def _bucket_label(field: FieldSpec | None, value: Any) -> str:
+    """统计分组的展示名：布尔走「是/否」词表，不能冒出 True/False。"""
+    if field is not None and field.type == "checkbox":
+        return "是" if value else "否"
+    return "" if value is None else str(value)
 
 
 # --------------------------------------------------------------------------- 工厂
@@ -122,8 +140,7 @@ def build_router(spec: TableSpec) -> APIRouter:
 
     @router.get("")
     def list_items(request: Request, session: Session = Depends(get_session)):
-        # 筛选/排序/分页一律走 services/table_query.py —— 导出接口用的是同一份实现，
-        # 这样「导出当前筛选结果」才名副其实。
+        # 筛选/排序/分页一律走 services/table_query.py —— 统计与导出用的是同一份实现
         query = build_list_query(spec, session, request.query_params)
         total = query.total(session)
         rows = session.scalars(
@@ -137,24 +154,18 @@ def build_router(spec: TableSpec) -> APIRouter:
 
     @router.get("/stats")
     def stats(request: Request, session: Session = Depends(get_session)):
-        """KPI 用：总数 + 各筛选列的分布（前端统计一律读这里，不再遍历全表算）。"""
-        params = request.query_params
-        conditions = []
-        if spec.soft_delete:
-            conditions.append(model.deleted_at.is_(None))
-        if spec.class_scoped:
-            class_id = _resolve_class_id(spec, params.get("classId"), session)
-            if class_id is not None:
-                conditions.append(model.class_id == class_id)
-
+        """KPI 用。与列表**共用同一套条件** —— 否则搜完之后的总数不是搜索结果的总数。"""
+        conditions = build_conditions(spec, session, request.query_params)
         total = session.scalar(select(func.count()).select_from(model).where(*conditions)) or 0
+
         groups: dict[str, dict[str, int]] = {}
         for column in spec.filter_keys:
             attr = getattr(model, column)
             rows = session.execute(
                 select(attr, func.count()).select_from(model).where(*conditions).group_by(attr)
             ).all()
-            groups[column] = {str(key): count for key, count in rows}
+            field = spec.field_map.get(column)
+            groups[column] = {_bucket_label(field, key): count for key, count in rows}
         return {"ok": True, "data": {"total": total, "groups": groups}}
 
     @router.get("/schema")
@@ -167,11 +178,12 @@ def build_router(spec: TableSpec) -> APIRouter:
 
     @router.post("", status_code=201)
     def create_one(
-        request: Request, body: dict[str, Any] = Body(default_factory=dict), session: Session = Depends(get_session)
+        request: Request,
+        body: dict[str, Any] = Body(default_factory=dict),
+        session: Session = Depends(get_session),
     ):
-        class_id = _resolve_class_id(spec, request.query_params.get("classId") or body.get("classId"), session)
-        values = normalize(spec, body, partial=False)
-        row = model(**values)
+        class_id = resolve_class_id(spec, request.query_params.get("classId") or body.get("classId"), session)
+        row = model(**normalize(spec, body, partial=False))
         if class_id is not None:
             row.class_id = class_id
         session.add(row)
@@ -179,7 +191,11 @@ def build_router(spec: TableSpec) -> APIRouter:
         return {"ok": True, "data": serialize(row, spec.output_keys)}
 
     @router.patch("/{row_id}")
-    def update_one(row_id: int, body: dict[str, Any] = Body(default_factory=dict), session: Session = Depends(get_session)):
+    def update_one(
+        row_id: int,
+        body: dict[str, Any] = Body(default_factory=dict),
+        session: Session = Depends(get_session),
+    ):
         row = _get_or_404(spec, session, row_id)
         for key, value in normalize(spec, body, partial=True).items():
             setattr(row, key, value)
@@ -194,15 +210,30 @@ def build_router(spec: TableSpec) -> APIRouter:
         else:
             session.delete(row)
         session.flush()
-        return {"ok": True, "data": {"id": row_id}}
+        # 写操作统一返回更新后的完整记录（约定见 03 §5.2）
+        return {"ok": True, "data": serialize(row, spec.output_keys) if spec.soft_delete else {"id": row_id}}
+
+    @router.post("/{row_id}/restore")
+    def restore_one(row_id: int, session: Session = Depends(get_session)):
+        row = session.get(model, row_id)
+        if row is None:
+            raise ApiError(NOT_FOUND, f"这条{spec.entity}不存在", status=404, detail={"id": row_id})
+        if spec.soft_delete and getattr(row, "deleted_at", None) is not None:
+            row.deleted_at = None
+        session.flush()
+        return {"ok": True, "data": serialize(row, spec.output_keys)}
 
     @router.post("/batch")
     def batch(body: dict[str, Any] = Body(...), session: Session = Depends(get_session)):
         action = (body.get("action") or "").strip()
-        ids = [_as_int(raw, "ids") for raw in (body.get("ids") or [])]
+        ids = [as_int(raw, "ids") for raw in (body.get("ids") or [])]
         if not ids:
             raise ApiError(INVALID_VALUE, "没有选中任何记录")
-        rows = [row for row in (session.get(model, i) for i in ids) if row is not None]
+
+        # 只处理「当前可见」的行：已删除的不再参与批量操作（否则会出现
+        # 「界面上看不到，却被动过」的记录）
+        rows = [row for row in (_visible_or_none(spec, session, i) for i in ids) if row is not None]
+
         if action == "delete":
             for row in rows:
                 if spec.soft_delete:
@@ -218,7 +249,9 @@ def build_router(spec: TableSpec) -> APIRouter:
                     setattr(row, key, value)
         else:
             raise ApiError(INVALID_VALUE, "action 只能是 delete 或 update", detail={"action": action})
+
         session.flush()
-        return {"ok": True, "data": {"affected": len(rows)}}
+        # 同时回报「选中多少、实际处理多少」，让界面能如实说明差异
+        return {"ok": True, "data": {"requested": len(ids), "affected": len(rows)}}
 
     return router
