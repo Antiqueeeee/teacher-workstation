@@ -40,6 +40,7 @@ from app.schemas.common import page_meta, serialize_row
 from app.schemas.registry import FieldSpec, TableSpec
 from app.services.params import as_int
 from app.services.table_query import build_conditions, build_list_query, field_expr
+from app.services.media_service import attach_counts
 from app.services.table_write import save as save_row
 
 SpecProvider = Callable[[], TableSpec]
@@ -87,6 +88,9 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
         rows = session.scalars(
             query.stmt.limit(query.page_size).offset((query.page - 1) * query.page_size)
         ).all()
+        if spec.media_owner:
+            # 附件数一次查完（列表上要显示「3 个附件」，逐条查就是 N+1）
+            attach_counts(session, spec.key, list(rows))
         return {
             "ok": True,
             "data": [serialize_row(spec, row) for row in rows],

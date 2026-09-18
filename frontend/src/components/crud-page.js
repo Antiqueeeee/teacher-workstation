@@ -15,6 +15,7 @@ import { icon } from '../core/icons.js';
 import { getListState, toParams } from '../core/store.js';
 import { openForm } from './form.js';
 import { openImport } from './import-modal.js';
+import { openMediaPanel } from './media-picker.js';
 import { confirmBox, toast } from './ui.js';
 
 const PAGE_SIZES = [20, 50, 100];
@@ -106,11 +107,17 @@ function sortMark(state, key) {
   return `<span class="sort-mark">${state.dir === 'asc' ? '▲' : '▼'}</span>`;
 }
 
-function rowActions(row) {
+function rowActions(row, spec) {
   if (row.deleted_at) {
     return `<button class="btn btn-sm" type="button" data-restore="${row.id}">恢复</button>`;
   }
-  return `<button class="btn btn-sm" type="button" data-edit="${row.id}">编辑</button>
+  // 支持附件的表（沟通留档类）多一个入口：照片与录音归档都在里面
+  const media = spec.mediaOwner
+    ? `<button class="btn btn-sm" type="button" data-media="${row.id}"
+         title="照片与录音归档">附件${row.attachment_count ? ` ${row.attachment_count}` : ''}</button>`
+    : '';
+  return `${media}
+    <button class="btn btn-sm" type="button" data-edit="${row.id}">编辑</button>
     <button class="btn btn-sm btn-ghost" type="button" data-del="${row.id}">删除</button>`;
 }
 
@@ -140,7 +147,7 @@ function tableHtml(spec, rows, state) {
         .join('');
       return `<tr>
         ${cells}
-        <td class="actions">${deletedBadge(row)}${rowActions(row)}</td>
+        <td class="actions">${deletedBadge(row)}${rowActions(row, spec)}</td>
       </tr>`;
     })
     .join('');
@@ -175,7 +182,7 @@ function cardsHtml(spec, rows) {
               ${deletedBadge(row)}
             </div>
             ${details}
-            <div class="toolbar" style="margin:10px 0 0">${rowActions(row)}</div>
+            <div class="toolbar" style="margin:10px 0 0">${rowActions(row, spec)}</div>
           </div>`;
         })
         .join('')}
@@ -334,6 +341,18 @@ export function createCrudPage({
       if (actionButton) {
         const action = actions.find((item) => item.name === actionButton.dataset.pageAction);
         if (action) await action.run(context());
+        return;
+      }
+
+      const media = target.closest('[data-media]');
+      if (media) {
+        const row = rowsById.get(media.dataset.media);
+        openMediaPanel({
+          ownerTable: spec.key,
+          ownerId: media.dataset.media,
+          title: row?.[spec.columns[0].k] ? String(row[spec.columns[0].k]) : spec.entity,
+          onChanged: refresh,
+        });
         return;
       }
 

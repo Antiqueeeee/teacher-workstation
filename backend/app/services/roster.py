@@ -92,3 +92,41 @@ def list_class_students(session: Session, class_id: int) -> list[Student]:
             .order_by(Student.sno, Student.name, Student.id)
         )
     )
+
+
+def find_student(
+    session: Session,
+    *,
+    name: str = "",
+    sno: str = "",
+    class_id: int | None = None,
+    label: str = "学生",
+) -> tuple[Student | None, str | None]:
+    """按姓名（优先）或学号找一个学生。返回 `(学生, 一句问题)`。
+
+    **查无此人、重名都不猜** —— 返回一句给人看的话，由调用方决定是报错还是记进导入报告。
+
+    这条规则原先在监护人、出勤、宿舍三处各写了一遍（第四处「沟通留档」马上要写），
+    现在只有这一份：同一条「怎么把人找出来」的规矩在多处实现，迟早分叉，
+    而分叉的表现是「同一个名字在这页能录进去、在那页认不出来」。
+    """
+    name = str(name or "").strip()
+    sno = str(sno or "").strip()
+    if not name and not sno:
+        return None, f"要填{label}姓名（或学号）"
+
+    query = select(Student).where(Student.deleted_at.is_(None))
+    if class_id:
+        query = query.where(Student.class_id == class_id)
+    query = query.where(Student.name == name) if name else query.where(Student.sno == sno)
+    matches = list(session.scalars(query))
+
+    if not matches:
+        who = f"叫「{name}」的{label}" if name else f"学号是「{sno}」的{label}"
+        return None, f"学生档案里没有{who}，请先在「学生档案」里加进去"
+    if len(matches) > 1:
+        return None, (
+            f"有 {len(matches)} 个{label}都叫「{name}」，系统分不清是哪一个。"
+            "请改用学号指定，或先到学生档案里把其中一个改成可区分的写法。"
+        )
+    return matches[0], None

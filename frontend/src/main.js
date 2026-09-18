@@ -15,6 +15,7 @@ import { currentKey, register, setDefault, start } from './core/router.js';
 import { getSpec, setRegistry } from './core/store.js';
 import { attendancePageDef } from './pages/attendance.js';
 import { dormDutyPageDef } from './pages/dorm-duty.js';
+import { contactsPageDef } from './pages/contacts.js';
 import { dormsPageDef } from './pages/dorms.js';
 import { guardiansPageDef } from './pages/guardians.js';
 import { homeworkPageDef } from './pages/homework.js';
@@ -29,6 +30,7 @@ import { todosPageDef } from './pages/todos.js';
 const PAGE_DEFS = [
   studentsPageDef,
   guardiansPageDef,
+  contactsPageDef,
   attendancePageDef,
   homeworkPageDef,
   scoresPageDef,

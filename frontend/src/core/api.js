@@ -132,6 +132,25 @@ export const api = {
   seatClear: (classId) =>
     request('/seats/clear', { method: 'POST', body: {}, params: { classId } }).then((p) => p.data),
 
+  /** 媒体：上传（multipart）、一条记录的附件列表、删除。 */
+  async mediaUpload(ownerTable, ownerId, file) {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("ownerTable", ownerTable);
+    form.append("ownerId", String(ownerId));
+    let response;
+    try {
+      response = await fetch(buildUrl("/media"), { method: "POST", body: form });
+    } catch (cause) {
+      throw new ApiError("NETWORK", describeError({ code: "NETWORK" }), cause);
+    }
+    return unwrap(response).then((p) => p.data);
+  },
+  mediaList: (ownerTable, ownerId) =>
+    request("/media", { params: { ownerTable, ownerId } }).then((p) => p.data),
+  mediaDelete: (id) => request(`/media/${id}`, { method: "DELETE" }).then((p) => p.data),
+  mediaStorage: () => request("/media/storage").then((p) => p.data),
+
   /** 学生档案：同名/同学号冲突报告（学生档案页面顶部据此提示）。 */
   studentConflicts: (classId) =>
     request('/students/name-conflicts', { params: { classId } }).then((p) => p.data),

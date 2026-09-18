@@ -48,6 +48,7 @@ from app.models.dorm import (
 )
 from app.models.student import Student
 from app.services.params import as_int
+from app.services.roster import find_student, list_class_students
 
 # 「1号床」「01」「床 1」「1」都能认；「靠窗」认不出 —— 认不出就报错，不猜
 BED_NUMBER = re.compile(r"\d+")
@@ -302,10 +303,13 @@ def resolve_student(
     *,
     required_message: str | None = None,
 ) -> Student | None:
-    """按姓名（优先）或学号找学生（床位与值日共用 —— 两处的解析规则必须一致）。"""
-    """按姓名（优先）或学号找学生；**空床位不落库**（界面上自动显示为空位）。
+    """按姓名（优先）或学号找学生（床位与值日共用）。
 
-    查无此人/重名的处理与别处一致：**明确报错，不猜**（`services/roster.py` 的规矩）。
+    规则本身在 `services/roster.py:find_student` —— 这是**第四处**要用它的地方，
+    所以在那之前先收成一份（原先监护人、出勤、宿舍各写了一遍）。
+
+    空值有两种情形：**明确传空**表示「腾出这个位置 / 换人」，没传则表示「保持原样」——
+    两者不能混，否则改一下「寝室长」就会把学生从床上清掉。
     """
     name = str(values.get("student_name") or "").strip()
     sno = str(values.get("sno") or "").strip()
@@ -321,32 +325,15 @@ def resolve_student(
                 "要填学生姓名（或学号）。空床位不用登记 —— 界面上按房间容量自动显示成空位。",
                 detail={"field": "student_name"},
             )
-        # 编辑时**明确**把姓名清空 = 腾出这个床位；没传这两个字段则保持原样
-        # （不然改一下「寝室长」就会把学生从床上清掉）
         if provided:
             values["student_id"] = None
             values["student_name"] = ""
         return None
 
-    query = select(Student).where(Student.deleted_at.is_(None), Student.class_id == class_id)
-    query = query.where(Student.name == name) if name else query.where(Student.sno == sno)
-    matches = list(session.scalars(query))
-
-    if not matches:
-        who = f"叫「{name}」的学生" if name else f"学号是「{sno}」的学生"
-        raise ApiError(
-            INVALID_VALUE,
-            f"学生档案里没有{who}，请先在「学生档案」里加进去",
-            detail={"field": "student_name" if name else "sno"},
-        )
-    if len(matches) > 1:
-        raise ApiError(
-            INVALID_VALUE,
-            f"有 {len(matches)} 个学生都叫「{name}」，系统分不清是哪一个。"
-            "请改用学号指定，或先到学生档案里把其中一个改成可区分的写法。",
-            detail={"field": "student_name", "matches": len(matches)},
-        )
-    return matches[0]
+    student, problem = find_student(session, name=name, sno=sno, class_id=class_id)
+    if problem is not None:
+        raise ApiError(INVALID_VALUE, problem, detail={"field": "student_name" if name else "sno"})
+    return student
 
 
 def room_tree(session: Session, class_id: int) -> dict[str, Any]:

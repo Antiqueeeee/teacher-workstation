@@ -28,7 +28,7 @@ from app.models.attendance import ATTENDANCE_TYPES, FOLLOW_UP_STATES, Attendance
 from app.models.student import Student
 from app.services.attendance_rate import day_summary
 from app.services.params import as_int
-from app.services.roster import list_class_students
+from app.services.roster import find_student, list_class_students
 
 
 def default_follow_up(att_type: str) -> str:
@@ -60,30 +60,23 @@ def next_follow_up(current: str | None, att_type: str) -> str:
 
 
 def _find_student(session: Session, name: str, class_id: int | None) -> Student:
-    """按姓名找学生；查无此人或重名都明确报错，**绝不随便挑一个**。"""
-    query = select(Student).where(Student.deleted_at.is_(None), Student.name == name)
-    if class_id:
-        query = query.where(Student.class_id == class_id)
-    matches = list(session.scalars(query))
+    """按姓名找学生；查无此人或重名都明确报错，**绝不随便挑一个**。
 
-    if not matches:
+    规则本身在 `services/roster.py:find_student`（监护人、宿舍、沟通留档共用同一份）。
+    """
+    student, problem = find_student(session, name=name, class_id=class_id, label="学生")
+    if problem is not None:
+        # 重名时给一条**做得到**的出路：这张表单只收姓名，所以「用学号区分」在这里无解；
+        # 点名是按学生选的，不受重名影响；或者去档案里把名字改成能区分的写法
+        hint = ""
+        if "都叫" in problem:
+            hint = "请改用「点名」登记（它按学生选，不受重名影响），或先到学生档案里把其中一个改成可区分的写法。"
         raise ApiError(
             INVALID_VALUE,
-            f"学生档案里没有叫「{name}」的学生，请先在「学生档案」里加进去",
+            problem + hint,
             detail={"field": "student_name", "value": name},
         )
-    if len(matches) > 1:
-        # 给一条**做得到**的出路：这张表单只收姓名，所以「用学号区分」在这里无解；
-        # 点名是按学生选的，不受重名影响；或者去档案里把名字改成能区分的写法
-        # （档案页顶部会列出所有同名分组）。旧应用在这里是直接挂到第一个人身上
-        raise ApiError(
-            INVALID_VALUE,
-            f"有 {len(matches)} 个学生都叫「{name}」，系统分不清是哪一个。"
-            "请改用「点名」登记（它按学生选，不受重名影响），"
-            "或先到学生档案里把其中一个改成可区分的写法。",
-            detail={"field": "student_name", "value": name, "matches": len(matches)},
-        )
-    return matches[0]
+    return student
 
 
 def _reject_duplicate(

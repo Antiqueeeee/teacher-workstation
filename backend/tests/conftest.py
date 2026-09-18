@@ -24,6 +24,7 @@ os.environ["TWS_DATA_DIR"] = str(_TMP_DATA_DIR)
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.config import DATA_DIR, MEDIA_DIR  # noqa: E402
 from app.db.engine import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -56,6 +57,8 @@ def db_session(client):  # 依赖 client：确保应用已启动、迁移已跑�
 # `student_field_defs`（默认字段定义）、`app_state` 是应用启动时播种的，
 # 清掉它们后面的用例会找不到班级与字段。
 BUSINESS_TABLES = (
+    "media",
+    "contact_logs",
     "scores",
     "exam_subjects",
     "exams",
@@ -101,3 +104,12 @@ def clean_business_data(client):  # 依赖 client：确保表已经建好
         session.commit()
     finally:
         session.close()
+
+    # 媒体**文件**也要清：只清表的话，上一个用例传的照片还留在盘上，
+    # 「盘上只有一份文件」这类断言就会被别人留下的文件搅乱
+    for folder in (MEDIA_DIR, DATA_DIR / "trash"):
+        if not folder.exists():
+            continue
+        for item in folder.rglob("*"):
+            if item.is_file():
+                item.unlink()

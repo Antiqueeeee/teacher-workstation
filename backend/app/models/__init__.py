@@ -6,10 +6,12 @@
 from app.models.app_state import AppState
 from app.models.attendance import Attendance
 from app.models.class_ import Class
+from app.models.contact import ContactLog
 from app.models.dorm import DormBed, DormDuty, DormRoom
 from app.models.exam import Exam, ExamSubject, Score
 from app.models.guardian import Guardian
 from app.models.homework import Homework, HomeworkUnsubmitted
+from app.models.media import Media
 from app.models.rule import Rule
 from app.models.seat import Seat, SeatPlan
 from app.models.student import Student, StudentFieldDef
@@ -20,6 +22,7 @@ __all__ = [
     "AppState",
     "Attendance",
     "Class",
+    "ContactLog",
     "DormBed",
     "DormDuty",
     "DormRoom",
@@ -28,6 +31,7 @@ __all__ = [
     "Guardian",
     "Homework",
     "HomeworkUnsubmitted",
+    "Media",
     "Rule",
     "Seat",
     "SeatPlan",

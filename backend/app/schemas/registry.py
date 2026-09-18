@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.schemas.specs.classroom import RULE, TEMPLATE, TODO
-from app.schemas.specs.contact import GUARDIAN
+from app.schemas.specs.contact import CONTACT, GUARDIAN
 from app.schemas.specs.dorm import DORM_BED, DORM_DUTY, DORM_ROOM, SEAT
 from app.schemas.specs.teaching import ATTENDANCE, EXAM, HOMEWORK
 from app.schemas.table_spec import FIELD_TYPES, ColumnSpec, FieldSpec, TableSpec
@@ -36,6 +36,7 @@ __all__ = [
     "RULE",
     "TEMPLATE",
     "GUARDIAN",
+    "CONTACT",
     "HOMEWORK",
     "ATTENDANCE",
     "EXAM",
@@ -57,6 +58,7 @@ TABLES: dict[str, TableSpec] = {
         RULE,
         TEMPLATE,
         GUARDIAN,
+        CONTACT,
         HOMEWORK,
         ATTENDANCE,
         EXAM,

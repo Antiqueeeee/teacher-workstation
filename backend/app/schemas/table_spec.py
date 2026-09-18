@@ -71,6 +71,10 @@ class TableSpec:
     # 用途：有些表删一条会牵连别的表的状态，又不能在数据库层用外键表达 ——
     # 例如「删宿舍房间」会让那间房的人从看板上消失，所以要在这里挡住。
     before_delete: Any = None
+    # 这张表的记录可以挂附件（照片/录音归档）。通用列表据此显示附件数与附件入口，
+    # 并在序列化前批量填 `attachment_count`（不是每条记录查一次）。
+    # 支持哪些附件类型由媒体服务按 kind 判断，这里只声明「能挂」。
+    media_owner: bool = False
     # 有些表的字段存在一个 JSON 列里（学生档案的 `extra`）：字段定义在运行时可变，
     # 建成列就等于每加一个字段改一次表结构。声明后，搜索 / 排序 / 筛选 / 序列化
     # 都会自动走 `json_extract`，不必为该表写一套特例。
@@ -123,6 +127,8 @@ class TableSpec:
             # 前端要靠它决定「删除确认框怎么说」：能恢复的表说「可以找回」，
             # 不能恢复的表必须说清是彻底删掉（说反了就是骗人）
             "softDelete": self.soft_delete,
+            # 这张表的记录能不能挂附件（照片/录音归档）—— 列表据此显示附件入口
+            "mediaOwner": self.media_owner,
             "defaultSort": {"k": self.default_sort[0], "dir": self.default_sort[1]},
             "columns": [asdict(column) for column in self.columns],
             "fields": [asdict(field_spec) for field_spec in self.fields],

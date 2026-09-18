@@ -12,9 +12,11 @@ from __future__ import annotations
 from fastapi import APIRouter, FastAPI
 
 from app.api.v1.attendance_day import router as attendance_day_router
+from app.api.v1.contacts import router as contacts_router
 from app.api.v1.crud_factory import build_router
 from app.api.v1.dorms import router as dorms_router
 from app.api.v1.exams import router as exams_router
+from app.api.v1.media import router as media_router
 from app.api.v1.seats import router as seats_router
 from app.api.v1.export import router as export_router
 from app.api.v1.student_fields import router as student_fields_router
@@ -52,6 +54,10 @@ router.include_router(exams_router)
 router.include_router(dorms_router)
 # /seats/board、/seats/randomize … 必须先于 /seats/{row_id}
 router.include_router(seats_router)
+# /contacts/follow-ups 必须先于 /contacts/{row_id}
+router.include_router(contacts_router)
+# /media/storage、/media/purge 必须先于 /media/{row_id}
+router.include_router(media_router)
 
 # 静态表：声明写死在注册表里，这里直接生成路由
 for _spec in TABLES.values():
