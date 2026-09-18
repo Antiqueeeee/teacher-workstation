@@ -544,7 +544,8 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .media-item img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-sm); }
 .media-item figcaption { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
 .media-name { font-weight: 600; color: var(--ink-800); word-break: break-all; }
-.media-audio { grid-column: span 2; }
+/* 占满一整行：窄屏只剩一列时 `span 2` 会把隐式第二列撑出来 */
+.media-audio { grid-column: 1 / -1; }
 .media-audio audio { width: 100%; }
 .media-doc { align-items: flex-start; }
 .media-lightbox { display: flex; flex-direction: column; align-items: center; gap: 8px; }

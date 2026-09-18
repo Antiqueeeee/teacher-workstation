@@ -150,6 +150,8 @@ export const api = {
     request("/media", { params: { ownerTable, ownerId } }).then((p) => p.data),
   mediaDelete: (id) => request(`/media/${id}`, { method: "DELETE" }).then((p) => p.data),
   mediaStorage: () => request("/media/storage").then((p) => p.data),
+  /** 按日期（可选按学生）真正清理媒体文件 —— 不进回收站，界面要二次确认。 */
+  mediaPurge: (payload) => request("/media/purge", { method: "POST", body: payload }).then((p) => p.data),
 
   /** 学生档案：同名/同学号冲突报告（学生档案页面顶部据此提示）。 */
   studentConflicts: (classId) =>

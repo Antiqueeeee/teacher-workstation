@@ -28,7 +28,16 @@ router = APIRouter(prefix="/media", tags=["媒体库"])
 DOWNLOAD_MIME = "application/octet-stream"
 
 
+def _maybe_class(request: Request, session: Session) -> int | None:
+    """`classId` 传了就用它，没传也不报错（附件列表跟着记录走，不必强制带班级）。"""
+    raw = request.query_params.get("classId")
+    if raw in (None, ""):
+        return None
+    return resolve_class_id(CONTACT, raw, session)
+
+
 def _class_id(request: Request, session: Session) -> int:
+    """整个班的附件视图用 —— 这个必须有班级（不然「这个班」无从谈起）。"""
     return resolve_class_id(CONTACT, request.query_params.get("classId"), session)
 
 
@@ -56,7 +65,26 @@ def upload(
         upload=file,
         note=note,
     )
+    # **在返回之前提交**：文件已经落盘了，若数据库这一步失败，客户端却收到「上传成功」，
+    # 盘上就会留下一份谁也看不到、也删不掉的孤儿文件（评审实测：yield 依赖的提交
+    # 发生在响应之后，失败时客户端已经拿到 201）。提交失败就把文件收掉。
+    _commit_or_cleanup(session, media)
     return {"ok": True, "data": to_dict(media)}
+
+
+def _commit_or_cleanup(session: Session, media) -> None:
+    """提交数据库；失败就把刚落盘的文件收掉，再让错误正常报出去。
+
+    媒体与别的表不同：**盘上的文件不会跟着事务回滚**。不补偿的话，失败一次就多一份垃圾。
+    """
+    try:
+        session.commit()
+    except Exception:
+        try:
+            media_store.remove_file(media.rel_path)
+        except media_store.MediaError:
+            pass
+        raise
 
 
 @router.get("")
@@ -70,9 +98,18 @@ def list_media(request: Request, session: Session = Depends(get_session)):
             raise ApiError(
                 INVALID_VALUE, f"「{owner_table}」这个模块还不支持挂附件", detail={"ownerTable": owner_table}
             )
+        try:
+            owner_pk = int(owner_id)
+        except ValueError:
+            raise ApiError(
+                INVALID_VALUE, "ownerId 要是数字", detail={"ownerId": owner_id}
+            ) from None
         return {
             "ok": True,
-            "data": [to_dict(item) for item in list_for(session, owner_table, int(owner_id))],
+            "data": [
+                to_dict(item)
+                for item in list_for(session, owner_table, owner_pk, _maybe_class(request, session))
+            ],
         }
 
     class_id = _class_id(request, session)
@@ -131,7 +168,7 @@ def delete(media_id: int, session: Session = Depends(get_session)):
     """删除 → 进回收站（文件挪到 `data/trash/日期/`），记录标记删除，可恢复。"""
     media = media_service.get_media(session, media_id)
     media_service.delete_media(session, media)
-    session.flush()
+    session.commit()  # 文件已经挪进回收站了，数据库这一步不能拖到响应之后
     return {"ok": True, "data": {"id": media_id}}
 
 
@@ -142,7 +179,7 @@ def restore(media_id: int, session: Session = Depends(get_session)):
     if media is None:
         raise ApiError(NOT_FOUND, "这个附件不存在", status=404, detail={"id": media_id})
     media_service.restore_media(session, media)
-    session.flush()
+    session.commit()  # 同上：文件已经挪回来了
     return {"ok": True, "data": to_dict(media)}
 
 
@@ -160,5 +197,16 @@ def purge(request: Request, body: dict = Body(default_factory=dict), session: Se
     unknown = [kind for kind in kinds if kind not in media_service.kinds()]
     if unknown:
         raise ApiError(INVALID_VALUE, f"认不出的类型：{'、'.join(unknown)}", detail={"kinds": list(kinds)})
-    removed = media_service.purge(session, class_id, before=as_date(raw_date, "before"), kinds=kinds)
-    return {"ok": True, "data": {"removed": removed, "kinds": list(kinds)}}
+    student_raw = body.get("studentId")
+    try:
+        student_id = int(student_raw) if student_raw not in (None, "") else None
+    except ValueError:
+        raise ApiError(INVALID_VALUE, "studentId 要是数字", detail={"studentId": student_raw}) from None
+    removed = media_service.purge(
+        session, class_id, before=as_date(raw_date, "before"), kinds=kinds, student_id=student_id
+    )
+    session.commit()  # 文件已经真删了，数据库这一步不能拖到响应之后
+    return {
+        "ok": True,
+        "data": {"removed": removed, "kinds": list(kinds), "studentId": student_id},
+    }

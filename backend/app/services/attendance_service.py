@@ -64,13 +64,15 @@ def _find_student(session: Session, name: str, class_id: int | None) -> Student:
 
     规则本身在 `services/roster.py:find_student`（监护人、宿舍、沟通留档共用同一份）。
     """
-    student, problem = find_student(session, name=name, class_id=class_id, label="学生")
+    student, problem, kind = find_student(session, name=name, class_id=class_id, label="学生")
     if problem is not None:
         # 重名时给一条**做得到**的出路：这张表单只收姓名，所以「用学号区分」在这里无解；
         # 点名是按学生选的，不受重名影响；或者去档案里把名字改成能区分的写法
-        hint = ""
-        if "都叫" in problem:
-            hint = "请改用「点名」登记（它按学生选，不受重名影响），或先到学生档案里把其中一个改成可区分的写法。"
+        hint = (
+            "这张表单只收姓名，改不了的话请用「点名」登记 —— 它是按学生选的，不受重名影响。"
+            if kind == "ambiguous"
+            else ""
+        )
         raise ApiError(
             INVALID_VALUE,
             problem + hint,

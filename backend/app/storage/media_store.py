@@ -61,7 +61,10 @@ EXT_MIME = {
 }
 
 # 浏览器普遍放不了的音频编码：标识出来，给「下载后播放」而不是假装能播
-BROWSER_UNFRIENDLY_AUDIO = {"amr", "aac", "3gp", "opus"}
+# 浏览器普遍放不了的音频：按**已知放不了的**列，而不是按「能放的」列 ——
+# 宁可让一个能放的去下载，也不要标错了让人以为不能放（opus 曾经被我误列在这里）。
+# 理想是按解码器判断（文档 §3.2 也这么要求），但读编码要额外依赖，暂时按扩展名。
+BROWSER_UNFRIENDLY_AUDIO = {"amr", "aac", "3gp", "wma"}
 
 THUMB_WIDTHS = (320, 1200)
 TRASH_DIR = DATA_DIR / "trash"
@@ -115,24 +118,46 @@ def rel_path_of(path: Path) -> str:
 
 def absolute_path(rel_path: str) -> Path:
     """相对路径 → 绝对路径。**只接受我们自己存进去的相对路径** ——
-    拼进 `..` 就能读到数据目录外的文件，所以这里拦住（即便调用方是内部代码）。"""
-    candidate = (DATA_DIR / rel_path).resolve()
-    if not str(candidate).startswith(str(DATA_DIR.resolve())):
+    拼进 `..` 就能读到数据目录外的文件，所以这里拦住（即便调用方是内部代码）。
+
+    判定用 `relative_to` 而不是字符串前缀比较：前缀比较放得过
+    `../<数据目录名>2/x`（前缀相同但其实是兄弟目录）（评审实测）。
+    """
+    if not str(rel_path or "").strip():
         raise MediaError("MEDIA_BAD_PATH", "文件路径不合法")
+    base = DATA_DIR.resolve()
+    candidate = (base / rel_path).resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError:
+        raise MediaError("MEDIA_BAD_PATH", "文件路径不合法") from None
     return candidate
 
 
-def _read_upload(upload: Any) -> bytes:
-    """把上传流读成 bytes 并检查大小。超限立刻报错，不先落盘再检查。"""
-    upload.file.seek(0) if hasattr(upload, "file") else None
-    data = upload.file.read() if hasattr(upload, "file") else upload.read()
-    limit = MAX_MEDIA_BYTES
-    if len(data) > limit:
-        raise MediaError(
-            "MEDIA_TOO_LARGE",
-            f"文件太大（{len(data) / 1024 / 1024:.1f} MB），单个文件上限 {limit // 1024 // 1024} MB。"
-            "录音传到电脑上压缩一下，或切成几段再传。",
-        )
+def _read_upload(upload: Any, limit: int) -> bytes:
+    """把上传流**分块**读进来并在超限时立刻停下。
+
+    一次 `read()` 的话，老师误传一个 2 GB 的视频会先分配 2 GB 内存才得到
+    「文件太大」（评审实测）。分块读到上限就停，内存占用与文件大小无关。
+    """
+    if hasattr(upload, "file"):
+        upload.file.seek(0)
+    stream = upload.file if hasattr(upload, "file") else upload
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = stream.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise MediaError(
+                "MEDIA_TOO_LARGE",
+                f"文件超过上限 {limit // 1024 // 1024} MB。"
+                "录音传到电脑上压缩一下，或切成几段再传。",
+            )
+        chunks.append(chunk)
+    data = b"".join(chunks)
     if not data:
         raise MediaError("MEDIA_EMPTY", "这个文件是空的")
     return data
@@ -154,10 +179,15 @@ def _thumb_path(original: Path, width: int) -> Path:
 
 
 def make_thumbnails(original: Path) -> None:
-    """生成两档缩略图。**顺带按 EXIF 方向把原件摆正**（旧应用没做，手机照片常躺着）。"""
+    """生成两档缩略图。**顺带按 EXIF 方向把原件摆正**（旧应用没做，手机照片常躺着）。
+
+    `exif_transpose` 总是返回新对象，所以不能拿「是不是同一个对象」当判据 ——
+    那样只有 90/270 度（尺寸会变）的照片会被摆正，180 度与镜像的照片原件仍然是躺的，
+    而缩略图是正的、点开却是歪的（评审实测 2/3/4 号方向）。
+    """
     with Image.open(original) as image:
         fixed = ImageOps.exif_transpose(image)
-        if fixed is not image and fixed.size != image.size:
+        if fixed.size != image.size or fixed.tobytes() != image.tobytes():
             # 方向确实需要调整：把摆正后的原件写回去（保持格式）
             if original.suffix.lower() in {".jpg", ".jpeg"}:
                 fixed.convert("RGB").save(original, quality=92)
@@ -218,6 +248,26 @@ def read_duration_ms(path: Path, extension: str) -> int | None:
     return None
 
 
+def verify_image(data: bytes) -> None:
+    """确认这段字节真的是能识别的图片。
+
+    **必须在落盘之前查**：不看的话，一个半截的照片或改了扩展名的文件会一路写盘，
+    然后在生成缩略图时抛 `UnidentifiedImageError` → 客户端 500、盘上留下一份
+    老师永远看不到也删不掉的孤儿文件（评审实测）。`verify()` 只查完整性不解码，
+    代价很低。
+    """
+    import io as _io
+
+    try:
+        with Image.open(_io.BytesIO(data)) as image:
+            image.verify()
+    except Exception:  # noqa: BLE001 - 任何解码问题都归为「这不是能认的图片」
+        raise MediaError(
+            "MEDIA_BAD_IMAGE",
+            "这个文件不是能识别的图片（可能是半截的照片，或改了扩展名的其他格式）。请重新选一张。",
+        ) from None
+
+
 def store_upload(upload: Any, *, existing_sha: set[str] | None = None) -> StoredFile:
     """把上传的文件落盘，返回元数据。**重复内容复用已有文件**（按 sha256）。"""
     original_name = str(getattr(upload, "filename", "") or "未命名")
@@ -230,12 +280,11 @@ def store_upload(upload: Any, *, existing_sha: set[str] | None = None) -> Stored
             "照片用 jpg/png，录音用 m4a/mp3/amr/aac/wav，视频用 mp4/mov。",
         )
 
-    data = _read_upload(upload)
-    if kind == "image" and len(data) > MAX_IMAGE_BYTES:
-        raise MediaError(
-            "MEDIA_TOO_LARGE",
-            f"照片太大（{len(data) / 1024 / 1024:.1f} MB），单张上限 {MAX_IMAGE_BYTES // 1024 // 1024} MB。",
-        )
+    if kind == "image":
+        data = _read_upload(upload, MAX_IMAGE_BYTES)
+        verify_image(data)
+    else:
+        data = _read_upload(upload, MAX_MEDIA_BYTES)
 
     digest = hashlib.sha256(data).hexdigest()
     playable = not (kind == "audio" and extension in BROWSER_UNFRIENDLY_AUDIO)
@@ -257,8 +306,13 @@ def store_upload(upload: Any, *, existing_sha: set[str] | None = None) -> Stored
     path = _store(extension, data)
     width = height = duration = None
     if kind == "image":
+        try:
+            make_thumbnails(path)
+        except Exception as error:  # noqa: BLE001 - 生成缩略图失败就别留这份文件
+            remove_file(rel_path_of(path))
+            raise MediaError("MEDIA_BAD_IMAGE", "这张图片读不出来，换一张试试。") from error
+        # 尺寸在**摆正之后**读：90 度的照片按旋转前读会把宽高写反（评审实测）
         width, height = read_image_size(path)
-        make_thumbnails(path)
     elif kind in ("audio", "video"):
         duration = read_duration_ms(path, extension)
 
@@ -277,6 +331,21 @@ def store_upload(upload: Any, *, existing_sha: set[str] | None = None) -> Stored
     )
 
 
+def remove_thumbnails(rel_path: str) -> None:
+    """删掉某个原件的缩略图。
+
+    缩略图的文件名是从原件的文件名派生的，所以**原件一改名（回收站/恢复都会换名）
+    这些缩略图就再也对不上了** —— 不删就是只增不减的垃圾（评审实测：
+    记录清空后 thumbs 里还留着三组 _320/_1200）。
+    """
+    stem = Path(rel_path).stem
+    folder = MEDIA_DIR / "thumbs"
+    if not folder.exists():
+        return
+    for item in folder.glob(f"{stem}_*.jpg"):
+        item.unlink(missing_ok=True)
+
+
 def move_to_trash(rel_path: str) -> str:
     """把一个文件挪进回收站，返回新的相对路径（恢复时挪回来用）。
 
@@ -289,6 +358,8 @@ def move_to_trash(rel_path: str) -> str:
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / source.name
     shutil.move(str(source), str(target))
+    # 缩略图跟着原件走：恢复时文件名会变，旧的缩略图再也对不上，留着只是垃圾
+    remove_thumbnails(rel_path)
     return rel_path_of(target)
 
 
@@ -306,10 +377,11 @@ def restore_from_trash(rel_path: str, *, extension: str) -> str:
 
 
 def remove_file(rel_path: str) -> None:
-    """真正删掉一个文件（按日期清理用）。文件不在就什么也不做。"""
+    """真正删掉一个文件**连同它的缩略图**（按日期清理用）。文件不在就什么也不做。"""
     path = absolute_path(rel_path)
     if path.exists():
         path.unlink()
+    remove_thumbnails(rel_path)
 
 
 def folder_size(path: Path) -> int:

@@ -40,6 +40,14 @@ function itemHtml(item) {
       <div><button class="btn btn-sm btn-ghost" type="button" data-del="${item.id}">删除</button></div>
     </div>`;
   }
+  if (item.kind === 'video') {
+    return `<div class="media-item media-audio">
+      <div class="media-name">${esc(item.originalName)}</div>
+      <div class="muted">${esc(item.sizeText)}${item.durationText ? ` · ${esc(item.durationText)}` : ''}</div>
+      <video controls preload="metadata" src="${esc(item.fileUrl)}"></video>
+      <div><button class="btn btn-sm btn-ghost" type="button" data-del="${item.id}">删除</button></div>
+    </div>`;
+  }
   return `<div class="media-item media-doc">
     <div class="media-name">${esc(item.originalName)}</div>
     <div class="muted">${esc(item.sizeText)}</div>
@@ -132,10 +140,10 @@ export function openMediaPanel({ ownerTable, ownerId, title = '附件', onChange
         );
         if (!yes) return;
         try {
-          await api.remove('media', del.dataset.del).catch(async () => {
-            // media 不是注册表里的表，没有通用删除；走专用接口
-            await api.mediaDelete(del.dataset.del);
-          });
+          // media 不在注册表里，只有专用删除接口。**不能先试通用接口**：
+          // 那是同一个请求，真正的错误会被第二次 404 顶掉，老师看到的是
+          // 「这个附件不存在」而不是真实原因（评审指出的）
+          await api.mediaDelete(del.dataset.del);
           toast('已删除，文件在回收站里');
           await load();
           if (onChanged) onChanged();
@@ -155,7 +163,7 @@ function openLightbox(item) {
     title: esc(item.originalName),
     wide: true,
     body: `<div class="media-lightbox">
-      <img src="/api/v1/media/${item.id}/thumb?w=1200" alt="${esc(item.originalName)}">
+      <img src="${esc(item.largeUrl)}" alt="${esc(item.originalName)}">
       <div class="muted">${esc(item.sizeText)}${item.width ? ` · ${item.width}×${item.height}` : ''}
         · <a href="${esc(item.fileUrl)}" download>下载原件</a></div>
     </div>`,

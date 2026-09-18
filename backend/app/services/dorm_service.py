@@ -330,7 +330,7 @@ def resolve_student(
             values["student_name"] = ""
         return None
 
-    student, problem = find_student(session, name=name, sno=sno, class_id=class_id)
+    student, problem, _kind = find_student(session, name=name, sno=sno, class_id=class_id)
     if problem is not None:
         raise ApiError(INVALID_VALUE, problem, detail={"field": "student_name" if name else "sno"})
     return student

@@ -23,7 +23,7 @@ def link_contact_student(values: dict[str, Any], session: Session, row: Any = No
     if not name:
         raise ApiError(INVALID_VALUE, "必须填写学生姓名", detail={"field": "student_name"})
 
-    student, problem = find_student(session, name=name, class_id=class_id)
+    student, problem, _kind = find_student(session, name=name, class_id=class_id)
     if problem is not None:
         raise ApiError(INVALID_VALUE, problem, detail={"field": "student_name", "value": name})
     values["student_id"] = student.id

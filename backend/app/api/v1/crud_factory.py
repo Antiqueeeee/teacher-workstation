@@ -40,6 +40,7 @@ from app.schemas.common import page_meta, serialize_row
 from app.schemas.registry import FieldSpec, TableSpec
 from app.services.params import as_int
 from app.services.table_query import build_conditions, build_list_query, field_expr
+from app.services.class_scope import resolve_class_id
 from app.services.media_service import attach_counts
 from app.services.table_write import save as save_row
 
@@ -67,6 +68,16 @@ def _get_or_404(spec: TableSpec, session: Session, row_id: int):
     return row
 
 
+def _scoped_class(spec: TableSpec, session: Session, request: Request) -> int | None:
+    """本次请求的班级（没传且只有一个班时就是那个班）。附件计数要与列表同一口径。"""
+    if not spec.class_scoped:
+        return None
+    try:
+        return resolve_class_id(spec, request.query_params.get("classId"), session)
+    except ApiError:
+        return None
+
+
 def _bucket_label(field: FieldSpec | None, value: Any) -> str:
     """统计分组的展示名：布尔走「是/否」词表，不能冒出 True/False。"""
     if field is not None and field.type == "checkbox":
@@ -90,7 +101,7 @@ def build_router(spec_provider: SpecProvider) -> APIRouter:
         ).all()
         if spec.media_owner:
             # 附件数一次查完（列表上要显示「3 个附件」，逐条查就是 N+1）
-            attach_counts(session, spec.key, list(rows))
+            attach_counts(session, spec.key, list(rows), _scoped_class(spec, session, request))
         return {
             "ok": True,
             "data": [serialize_row(spec, row) for row in rows],

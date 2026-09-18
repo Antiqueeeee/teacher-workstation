@@ -58,15 +58,15 @@ def _require_owner(session: Session, class_id: int, owner_table: str, owner_id: 
     return owner
 
 
-def _existing_shas(session: Session, class_id: int, owner_table: str, owner_id: int) -> dict[str, Media]:
-    """同一批附件里已经有的内容指纹 —— 用来做**批内去重**（同一张照片传两次很常见）。"""
+def _existing_shas(session: Session, class_id: int) -> dict[str, Media]:
+    """**这个班**已有的内容指纹 —— 同一份文件复用，不再占盘。
+
+    按班查而不是按「同一条记录」查：文档 §3.2 说的是「同一份文件重复上传复用已有文件」，
+    同一张照片挂到第二条沟通记录上同样不该再存一份（评审实测原先会存两份）。
+    并发首次上传同一文件时两边都看不到对方，会各写一份 —— 去重是尽力而为，不是保证。
+    """
     rows = session.scalars(
-        select(Media).where(
-            Media.deleted_at.is_(None),
-            Media.class_id == class_id,
-            Media.owner_table == owner_table,
-            Media.owner_id == owner_id,
-        )
+        select(Media).where(Media.deleted_at.is_(None), Media.class_id == class_id)
     )
     return {row.sha256: row for row in rows if row.sha256}
 
@@ -81,8 +81,8 @@ def save_media(
     note: str = "",
 ) -> Media:
     """上传一个附件。内容重复时复用已有文件（不重复占盘），另建一条记录。"""
-    _require_owner(session, class_id, owner_table, owner_id)
-    existing = _existing_shas(session, class_id, owner_table, owner_id)
+    owner = _require_owner(session, class_id, owner_table, owner_id)
+    existing = _existing_shas(session, class_id)
 
     try:
         stored = media_store.store_upload(upload, existing_sha=set(existing))
@@ -111,6 +111,9 @@ def save_media(
         class_id=class_id,
         owner_table=owner_table,
         owner_id=owner_id,
+        # 归属记录带有学生时一并记下来：既能按学生清理（`04` §3.5），
+        # 也让「这个附件跟谁有关」在库里说得清，不必回头 join 各业务表
+        student_id=getattr(owner, "student_id", None),
         kind=stored.kind,
         original_name=stored.original_name,
         rel_path=rel_path,
@@ -131,17 +134,16 @@ def save_media(
     return media
 
 
-def list_for(session: Session, owner_table: str, owner_id: int) -> list[Media]:
+def list_for(session: Session, owner_table: str, owner_id: int, class_id: int | None = None) -> list[Media]:
     """一条记录的附件列表：照片在前、音视频在后，同类按添加顺序。"""
-    rows = list(
-        session.scalars(
-            select(Media).where(
-                Media.deleted_at.is_(None),
-                Media.owner_table == owner_table,
-                Media.owner_id == owner_id,
-            )
-        )
+    query = select(Media).where(
+        Media.deleted_at.is_(None),
+        Media.owner_table == owner_table,
+        Media.owner_id == owner_id,
     )
+    if class_id is not None:
+        query = query.where(Media.class_id == class_id)
+    rows = list(session.scalars(query))
     return sorted(rows, key=lambda item: (KIND_ORDER.get(item.kind, 9), item.sort_order, item.id))
 
 
@@ -193,37 +195,63 @@ def delete_media(session: Session, media: Media) -> str:
 
 
 def restore_media(session: Session, media: Media) -> Media:
-    """从回收站恢复：把文件挪回媒体目录，清掉删除标记。"""
+    """从回收站恢复：把文件挪回媒体目录，清掉删除标记。
+
+    文件不在（有人手工清了 `data/trash/`）时**明确拒绝** —— 不能清掉删除标记就说
+    「恢复成功」，那样记录指着一条不存在的路径，取原件时 404，还说「可能手工挪过数据目录」，
+    把责任推给老师（评审实测）。
+    """
     if media.deleted_at is None:
         return media
-    media.rel_path = media_store.restore_from_trash(
+    restored = media_store.restore_from_trash(
         media.rel_path, extension=media_store.extension_of(media.rel_path)
     )
+    if restored == media.rel_path:
+        raise ApiError(
+            NOT_FOUND,
+            "回收站里已经没有这个文件了，没法恢复。它可能在 trash 目录里被手工清掉了。",
+            status=404,
+            detail={"relPath": media.rel_path},
+        )
+    media.rel_path = restored
     media.deleted_at = None
     session.flush()
     return media
 
 
-def purge(session: Session, class_id: int, *, before: date, kinds: tuple[str, ...] = ("audio",)) -> int:
-    """按日期清理媒体文件（默认只清录音，不动照片 —— `04` §3.5 的入口）。
+def purge(
+    session: Session,
+    class_id: int,
+    *,
+    before: date,
+    kinds: tuple[str, ...] = ("audio",),
+    student_id: int | None = None,
+) -> int:
+    """按日期**真正清理**媒体文件（默认只清录音，不动照片 —— `04` §3.5 的入口）。
 
-    这是**真正删文件**的动作：先删文件再删记录，界面上会二次确认并说明清了几个。
+    这是唯一会真正删文件的入口，所以要求显式传日期；可以再按学生过滤
+    （对应「删除某学生全部音频」那个入口）。
+
+    **文件的删法不能看「还有谁在用」的即时查询**：会话是 `autoflush=False`，
+    循环里已经 `session.delete()` 但还没落库的行照样查得到，于是每一条都以为
+    「别人还在用」，最后记录删空了、文件一份没删（评审实测：提示清理 4 条、磁盘没变）。
+    这里改成先把「要留下的路径」一次收齐，再逐条决定是否落盘删除。
     """
-    rows = list(
-        session.scalars(
-            select(Media).where(Media.class_id == class_id, Media.kind.in_(kinds))
-        )
-    )
+    all_rows = list(session.scalars(select(Media).where(Media.class_id == class_id)))
+
+    def is_target(media: Media) -> bool:
+        if media.kind not in kinds:
+            return False
+        if student_id is not None and media.student_id != student_id:
+            return False
+        return bool(media.created_at and media.created_at.date() <= before)
+
+    targets = [media for media in all_rows if is_target(media)]
+    keep_paths = {media.rel_path for media in all_rows if not is_target(media)}
+
     removed = 0
-    for media in rows:
-        if media.created_at.date() > before:
-            continue
-        others = session.scalars(
-            select(Media).where(
-                Media.id != media.id, Media.rel_path == media.rel_path
-            )
-        ).first()
-        if others is None:
+    for media in targets:
+        if media.rel_path not in keep_paths:
             try:
                 media_store.remove_file(media.rel_path)
             except MediaError:
@@ -234,26 +262,29 @@ def purge(session: Session, class_id: int, *, before: date, kinds: tuple[str, ..
     return removed
 
 
-def attach_counts(session: Session, owner_table: str, rows: list[Any]) -> None:
+def attach_counts(
+    session: Session, owner_table: str, rows: list[Any], class_id: int | None = None
+) -> None:
     """给一页记录批量填上附件数（`row.attachment_count`）。
 
     一次分组查询搞定，不是每条记录查一次 —— 列表页一页 20 条就是 20 次查询。
-    挂在通用列表的输出里（`spec.media_owner`），所以每个支持附件的模块都不用自己写。
+    由通用列表在序列化前调用（`spec.media_owner`），支持附件的模块都不必自己写。
     """
     ids = [row.id for row in rows]
     if not ids:
         return
-    counts = dict(
-        session.execute(
-            select(Media.owner_id, func.count())
-            .where(
-                Media.deleted_at.is_(None),
-                Media.owner_table == owner_table,
-                Media.owner_id.in_(ids),
-            )
-            .group_by(Media.owner_id)
-        ).all()
+    query = (
+        select(Media.owner_id, func.count())
+        .where(
+            Media.deleted_at.is_(None),
+            Media.owner_table == owner_table,
+            Media.owner_id.in_(ids),
+        )
+        .group_by(Media.owner_id)
     )
+    if class_id is not None:
+        query = query.where(Media.class_id == class_id)
+    counts = dict(session.execute(query).all())
     for row in rows:
         row._attachment_count = counts.get(row.id, 0)
 
@@ -277,6 +308,9 @@ def to_dict(media: Media) -> dict[str, Any]:
         "createdAt": media.created_at.isoformat(timespec="seconds") if media.created_at else None,
         "fileUrl": f"/api/v1/media/{media.id}/file",
         "thumbUrl": f"/api/v1/media/{media.id}/thumb" if media.kind == "image" else None,
+        # 点开放大用的图：前端不拼路径（拼错了只有点开才发现）
+        "largeUrl": f"/api/v1/media/{media.id}/thumb?w=1200" if media.kind == "image" else None,
+        "studentId": media.student_id,
         "ownerTable": media.owner_table,
         "ownerId": media.owner_id,
     }

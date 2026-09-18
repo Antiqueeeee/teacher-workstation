@@ -272,6 +272,7 @@ def test_purge_only_removes_audio_by_default(client, db_session):
     photo = _upload(client, class_id, contact["id"], "照片.png", _png(100, 100), "image/png").json()["data"]
     audio = _upload(client, class_id, contact["id"], "录音.wav", _wav(1.0), "audio/wav").json()["data"]
     photo_rel = _rel_path(db_session, photo["id"])
+    audio_rel = _rel_path(db_session, audio["id"])
 
     result = client.post(
         "/api/v1/media/purge",
@@ -284,7 +285,11 @@ def test_purge_only_removes_audio_by_default(client, db_session):
     ).json()["data"]
     assert [item["id"] for item in remaining] == [photo["id"]]
     assert media_store.absolute_path(photo_rel).exists()  # 照片没动
-    assert not media_store.absolute_path(_rel_path(db_session, audio["id"])) if False else True
+
+    # 录音的**文件**必须真的从盘上消失 —— 清理的作用就在这里。
+    # （这条原来写成 `assert ... if False else True`：恒真，所以「清理没删文件」
+    #   那个 bug 从这条用例底下溜过去了。评审抓到的。）
+    assert not (media_store.MEDIA_DIR / audio_rel.removeprefix("media/")).exists()
 
 
 def test_purge_requires_an_explicit_date(client, db_session):
@@ -319,3 +324,162 @@ def test_contact_follow_up_list_reads_the_flag(client, db_session):
     assert len(rows) == 1
     assert rows[0]["studentName"] == "留档跟进甲"
     assert rows[0]["result"] == "未接通"
+
+
+# ---------- 评审抓到的边界（这些原来一条用例都没有） ----------
+
+
+def test_broken_image_is_refused_and_leaves_nothing_on_disk(client, db_session):
+    """一个改了扩展名的文本文件：**报错、且盘上不留东西**。
+
+    原先没有兜底：写盘之后生成缩略图才炸 → 客户端拿到 500，
+    而盘上留着一份老师永远看不到、也删不掉的孤儿文件（评审实测）。
+    """
+    class_id = _class_id(db_session)
+    student = _student(db_session, "坏图甲", "M9101")
+    contact = _contact(client, class_id, student.name)
+
+    response = _upload(client, class_id, contact["id"], "假的.png", b"this is not an image", "image/png")
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "MEDIA_BAD_IMAGE"
+    assert _files_on_disk() == []
+
+
+def _files_on_disk() -> list:
+    return [
+        item
+        for item in media_store.MEDIA_DIR.rglob("*")
+        if item.is_file() and "thumbs" not in item.parts
+    ]
+
+
+def test_empty_file_is_refused(client, db_session):
+    class_id = _class_id(db_session)
+    student = _student(db_session, "空文件甲", "M9102")
+    contact = _contact(client, class_id, student.name)
+    response = _upload(client, class_id, contact["id"], "空的.png", b"", "image/png")
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "MEDIA_EMPTY"
+
+
+def test_dedup_works_across_records(client, db_session):
+    """同一份文件挂到**另一条**记录上也不该再存一份（文档 §3.2 说的是「同一份文件复用」）。"""
+    class_id = _class_id(db_session)
+    student = _student(db_session, "跨记录去重甲", "M9103")
+    first_contact = _contact(client, class_id, student.name)
+    second_contact = _contact(client, class_id, student.name, date="2026-09-16", channel="微信")
+    data = _png(240, 180)
+
+    one = _upload(client, class_id, first_contact["id"], "同图.png", data, "image/png").json()["data"]
+    two = _upload(client, class_id, second_contact["id"], "同图.png", data, "image/png").json()["data"]
+
+    assert _rel_path(db_session, one["id"]) == _rel_path(db_session, two["id"])
+    assert len(_files_on_disk()) == 1
+
+
+def test_restore_refuses_when_the_file_is_gone(client, db_session):
+    """回收站里已经没有文件了 —— 明确说清，而不是清掉删除标记报「恢复成功」。"""
+    class_id = _class_id(db_session)
+    student = _student(db_session, "恢复缺失甲", "M9104")
+    contact = _contact(client, class_id, student.name)
+    media = _upload(client, class_id, contact["id"], "照片.png", _png(80, 80), "image/png").json()["data"]
+
+    assert client.delete(f"/api/v1/media/{media['id']}").status_code == 200
+    # 模拟有人手工清了回收站
+    for item in (media_store.TRASH_DIR).rglob("*"):
+        if item.is_file():
+            item.unlink()
+
+    response = client.post(f"/api/v1/media/{media['id']}/restore")
+    assert response.status_code == 404, response.text
+    assert "回收站里已经没有这个文件" in response.json()["error"]["message"]
+
+
+def test_purge_by_student_removes_only_that_students_audio(client, db_session):
+    """「删除某学生全部音频」（`04` §3.5）—— 按学生筛，不动别人、不动照片。"""
+    class_id = _class_id(db_session)
+    one = _student(db_session, "清音频甲", "M9105")
+    other = _student(db_session, "清音频乙", "M9106")
+    contact_one = _contact(client, class_id, one.name)
+    contact_other = _contact(client, class_id, other.name)
+
+    # 两段录音**故意用不同时长**：内容一样的话会按去重复用同一份文件，
+    # 那清理甲的时候文件本来就该留着（乙还在用），这条用例就测不到东西了
+    audio_one = _upload(client, class_id, contact_one["id"], "甲.wav", _wav(1.0), "audio/wav").json()["data"]
+    _upload(client, class_id, contact_other["id"], "乙.wav", _wav(2.5), "audio/wav")
+    _upload(client, class_id, contact_one["id"], "甲的照片.png", _png(70, 70), "image/png")
+    audio_one_rel = _rel_path(db_session, audio_one["id"])
+
+    result = client.post(
+        "/api/v1/media/purge",
+        json={"classId": class_id, "before": "2099-01-01", "studentId": one.id},
+    ).json()["data"]
+    assert result["removed"] == 1 and result["studentId"] == one.id
+
+    # 只剩乙的录音（甲的照片不动）
+    remaining = client.get("/api/v1/media", params={"classId": class_id}).json()["data"]
+    assert sorted(item["kindLabel"] for item in remaining if item["kind"] == "audio") == ["录音"]
+    assert any(item["kind"] == "image" for item in remaining)
+    assert not (media_store.MEDIA_DIR / audio_one_rel.removeprefix("media/")).exists()
+
+
+def test_purge_deletes_files_even_when_records_share_them(client, db_session):
+    """多条记录共用一份文件时，清理必须**真的把文件删掉**。
+
+    原先靠循环里「还有谁在用」的即时查询判断，而会话是 autoflush=False：
+    已经 delete 但没落库的行照样查得到，于是每条都以为「别人还在用」，
+    结果记录删空、文件一份没删（评审实测：提示清理 4 条、磁盘没变）。
+    """
+    class_id = _class_id(db_session)
+    student = _student(db_session, "共享清理甲", "M9107")
+    contact = _contact(client, class_id, student.name)
+    data = _png(150, 120)
+    _upload(client, class_id, contact["id"], "同图.png", data, "image/png")
+    _upload(client, class_id, contact["id"], "同图2.png", data, "image/png")
+    assert len(_files_on_disk()) == 1
+
+    result = client.post(
+        "/api/v1/media/purge",
+        json={"classId": class_id, "before": "2099-01-01", "kinds": ["image"]},
+    ).json()["data"]
+    assert result["removed"] == 2
+    assert _files_on_disk() == []
+    assert media_store.folder_size(media_store.MEDIA_DIR / "thumbs") == 0  # 缩略图也不再留着
+
+
+def test_thumbnails_are_cleaned_up_with_the_original(client, db_session):
+    """缩略图跟着原件删 —— 不然 thumbs 里的占用只增不减，老师永远清不掉。"""
+    class_id = _class_id(db_session)
+    student = _student(db_session, "缩略图清理甲", "M9108")
+    contact = _contact(client, class_id, student.name)
+    media = _upload(client, class_id, contact["id"], "照片.png", _png(500, 400), "image/png").json()["data"]
+    assert media_store.folder_size(media_store.MEDIA_DIR / "thumbs") > 0
+
+    client.post(
+        "/api/v1/media/purge",
+        json={"classId": class_id, "before": "2099-01-01", "kinds": ["image"]},
+    )
+    assert media_store.folder_size(media_store.MEDIA_DIR / "thumbs") == 0
+
+
+def test_bad_owner_id_is_a_400_not_a_500(client, db_session):
+    class_id = _class_id(db_session)
+    response = client.get("/api/v1/media", params={"ownerTable": "contacts", "ownerId": "abc"})
+    assert response.status_code == 400
+    assert "要是数字" in response.json()["error"]["message"]
+
+
+def test_path_traversal_is_blocked():
+    """相对路径拼进 `..` 不能读到数据目录外面。
+
+    原先用字符串前缀比较，`../<数据目录名>2/x` 这种能溜过去（前缀相同但是兄弟目录）。
+    """
+    import pytest
+
+    from app.storage.media_store import MediaError
+
+    for bad in ("../outside.txt", "../../etc/passwd", "", "media/../../outside.txt"):
+        with pytest.raises(MediaError):
+            media_store.absolute_path(bad)
+    # 正常路径仍然可用
+    assert media_store.absolute_path("media/2026/09/x.jpg").name == "x.jpg"

@@ -41,6 +41,12 @@ class Media(Base, TimestampMixin, SoftDeleteMixin):
     owner_table: Mapped[str] = mapped_column(String(32), nullable=False)
     owner_id: Mapped[int] = mapped_column(Integer, nullable=False)
 
+    # 归属记录带有学生时一并记下来（沟通留档类记录都有）：
+    # 既能支持「删除某学生全部音频」（`04` §3.5），也让「这个附件跟谁有关」说得清
+    student_id: Mapped[int | None] = mapped_column(
+        ForeignKey("students.id", ondelete="SET NULL"), index=True, default=None
+    )
+
     kind: Mapped[str] = mapped_column(String(8), nullable=False)
     # 上传时的原始文件名 —— 老师认得出「这是跟张伟妈妈的_20260912.m4a」
     original_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)

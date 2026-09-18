@@ -8,4 +8,21 @@
  * 音频是老师自己用手机录完再上传的：本项目不触发录制、不要麦克风权限。
  */
 
-export const contactsPageDef = { specKey: 'contacts', group: '家校沟通', iconName: 'phone' };
+import { openStoragePanel } from '../components/media-storage.js';
+import { store } from '../core/store.js';
+
+export const contactsPageDef = {
+  specKey: 'contacts',
+  group: '家校沟通',
+  iconName: 'phone',
+  actions: [
+    {
+      name: 'storage',
+      label: '存储与清理',
+      iconName: 'trash',
+      async run() {
+        openStoragePanel({ classId: store.currentClassId });
+      },
+    },
+  ],
+};
