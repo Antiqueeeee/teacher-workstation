@@ -115,3 +115,65 @@ def test_commit_then_reimport_is_idempotent(client):
 def test_import_into_global_table_needs_no_class(client):
     rows = [{"title": "成绩下滑沟通", "category": "家长沟通", "content": "您好，最近注意到……"}]
     assert _commit(client, "templates", rows).json()["data"]["created"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 导出：核心承诺是「导出的是**当前筛选结果**」，不是全表
+# ---------------------------------------------------------------------------
+
+
+def test_export_respects_current_filters(client):
+    for index in (1, 2):
+        client.post("/api/v1/todos", json={"content": f"导出测试-高{index}", "priority": "高"})
+    client.post("/api/v1/todos", json={"content": "导出测试-低", "priority": "低"})
+
+    response = client.get(
+        "/api/v1/transfer/export/todos.xlsx",
+        params={"q": "导出测试", "filter.priority": "高"},
+    )
+    assert response.status_code == 200
+    assert "spreadsheetml" in response.headers["content-type"]
+
+    sheet = load_workbook(io.BytesIO(response.content)).active
+    headers = [cell.value for cell in sheet[1]]
+    assert headers[:3] == ["ID", "内容", "截止日期"]
+    contents = {row[1] for row in sheet.iter_rows(min_row=2, values_only=True)}
+    assert contents == {"导出测试-高1", "导出测试-高2"}  # 「低」那条没被导出去
+
+
+def test_export_formats_dates_and_checkboxes_for_roundtrip(client):
+    client.post(
+        "/api/v1/todos",
+        json={"content": "导出格式测试", "due_date": "2026-11-11", "done": True},
+    )
+    response = client.get("/api/v1/transfer/export/todos.xlsx", params={"q": "导出格式测试"})
+    sheet = load_workbook(io.BytesIO(response.content)).active
+    headers = [cell.value for cell in sheet[1]]
+    row = next(iter(sheet.iter_rows(min_row=2, values_only=True)))
+    data = dict(zip(headers, row))
+
+    assert data["截止日期"] == "2026-11-11"  # ISO 字符串，不是 Excel 序列号
+    # 导出用**字段名**（已完成），不是列表列名（状态）—— 字段名才是导入模板认的规范名，
+    # 这样导出的文件改一改就能直接导回来
+    assert data["已完成"] == "是"
+
+
+def test_exported_file_can_be_imported_back(client):
+    client.post("/api/v1/todos", json={"content": "回环测试", "due_date": "2026-12-01", "priority": "低"})
+    exported = client.get("/api/v1/transfer/export/todos.xlsx", params={"q": "回环测试"})
+
+    response = client.post(
+        "/api/v1/transfer/import",
+        params={"table": "todos"},
+        files={"file": ("todos.xlsx", exported.content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["missingColumns"] == []
+    assert data["summary"]["problem"] == 0
+
+
+def test_export_rejects_unknown_table(client):
+    response = client.get("/api/v1/transfer/export/nope.xlsx")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "TABLE_NOT_FOUND"

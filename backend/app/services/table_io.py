@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import Any
+from datetime import date, datetime
+from typing import Any, Iterable
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.comments import Comment
@@ -159,6 +160,43 @@ def build_template(spec: TableSpec) -> bytes:
         if field_spec.hint:
             notes.append(field_spec.hint)
         sheet.cell(row=1, column=position).comment = Comment("\n".join(notes), "班主任工作台")
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def build_export(spec: TableSpec, rows: Iterable[Any]) -> bytes:
+    """导出为 xlsx：列用中文字段名，日期 ISO，勾选输出「是/否」。
+
+    输出形状与导入模板一致 —— **导出的文件改一改就能直接导回来**。
+    这对「先导出、线下批量改、再导入」这个真实用法很重要。
+    """
+    fields = [field_spec for field_spec in spec.fields if field_spec.editable]
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = spec.title[:31]
+    sheet.append(["ID"] + [field_spec.label for field_spec in fields])
+
+    for row in rows:
+        values: list[Any] = [getattr(row, "id", None)]
+        for field_spec in fields:
+            raw = getattr(row, field_spec.k, None)
+            if field_spec.type == "checkbox":
+                values.append("是" if raw else "否")
+            elif isinstance(raw, datetime):
+                values.append(raw.strftime("%Y-%m-%d %H:%M:%S"))
+            elif isinstance(raw, date):
+                values.append(raw.isoformat())
+            else:
+                values.append(raw)
+        sheet.append(values)
+
+    sheet.column_dimensions["A"].width = 8
+    for position, field_spec in enumerate(fields, start=2):
+        sheet.column_dimensions[get_column_letter(position)].width = max(
+            12, min(36, len(field_spec.label) * 2 + 6)
+        )
 
     buffer = io.BytesIO()
     workbook.save(buffer)

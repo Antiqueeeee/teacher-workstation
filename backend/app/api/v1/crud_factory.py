@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.errors import (
@@ -31,10 +31,11 @@ from app.api.errors import (
 )
 from app.db.base import utcnow
 from app.db.engine import get_session
-from app.schemas.common import page_meta, resolve_paging, serialize
+from app.schemas.common import page_meta, serialize
 from app.schemas.registry import FieldSpec, TableSpec
 from app.services.class_scope import resolve_class_id
 from app.services.field_value import CODE_MISSING_REQUIRED, parse_value
+from app.services.table_query import build_list_query
 
 # --------------------------------------------------------------------------- 校验
 
@@ -105,15 +106,6 @@ def _resolve_class_id(spec: TableSpec, raw: Any, session: Session) -> int | None
     return resolve_class_id(spec, raw, session)
 
 
-def _truthy(raw: str) -> bool:
-    return raw.strip().lower() in {"1", "true", "yes", "y"}
-
-
-def _query_int(params: Any, key: str) -> int | None:
-    raw = params.get(key)
-    return None if raw in ("", None) else _as_int(raw, key)
-
-
 def _get_or_404(spec: TableSpec, session: Session, row_id: int):
     row = session.get(spec.model, row_id)
     if row is None or (spec.soft_delete and getattr(row, "deleted_at", None) is not None):
@@ -128,50 +120,19 @@ def build_router(spec: TableSpec) -> APIRouter:
     model = spec.model
     router = APIRouter(prefix=f"/{spec.key}", tags=[spec.title])
 
-    def visible(stmt):
-        return stmt.where(model.deleted_at.is_(None)) if spec.soft_delete else stmt
-
     @router.get("")
     def list_items(request: Request, session: Session = Depends(get_session)):
-        params = request.query_params
-        stmt = visible(select(model))
-
-        class_id = _resolve_class_id(spec, params.get("classId"), session) if spec.class_scoped else None
-        if class_id is not None:
-            stmt = stmt.where(model.class_id == class_id)
-
-        keyword = (params.get("q") or "").strip()
-        if keyword and spec.search_keys:
-            like = f"%{keyword}%"
-            stmt = stmt.where(or_(*[getattr(model, key).like(like) for key in spec.search_keys]))
-
-        for raw_key, raw_value in params.items():
-            if not raw_key.startswith("filter.") or raw_value == "":
-                continue
-            column = raw_key[len("filter.") :]
-            if column not in spec.filter_keys:
-                continue
-            field = spec.field_map.get(column)
-            value: Any = raw_value
-            if field is not None:
-                value = coerce(field, raw_value) if field.type != "select" else raw_value
-            stmt = stmt.where(getattr(model, column) == value)
-
-        sort_key = params.get("sort") or spec.default_sort[0]
-        if sort_key not in spec.sortable_keys:
-            sort_key = spec.default_sort[0]
-        default_dir = "desc" if spec.default_sort[1] < 0 else "asc"
-        direction = (params.get("dir") or default_dir).strip().lower()
-        column = getattr(model, sort_key)
-        stmt = stmt.order_by(column.desc() if direction.startswith("d") else column.asc(), model.id.desc())
-
-        total = session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
-        page, page_size = resolve_paging(_query_int(params, "page"), _query_int(params, "pageSize"))
-        rows = session.scalars(stmt.limit(page_size).offset((page - 1) * page_size)).all()
+        # 筛选/排序/分页一律走 services/table_query.py —— 导出接口用的是同一份实现，
+        # 这样「导出当前筛选结果」才名副其实。
+        query = build_list_query(spec, session, request.query_params)
+        total = query.total(session)
+        rows = session.scalars(
+            query.stmt.limit(query.page_size).offset((query.page - 1) * query.page_size)
+        ).all()
         return {
             "ok": True,
             "data": [serialize(row, spec.output_keys) for row in rows],
-            "meta": page_meta(total, page, page_size),
+            "meta": page_meta(total, query.page, query.page_size),
         }
 
     @router.get("/stats")

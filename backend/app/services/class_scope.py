@@ -17,13 +17,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import CLASS_ID_REQUIRED, INVALID_VALUE, ApiError
 from app.models.class_ import Class
 from app.schemas.registry import TableSpec
-
-
-def _as_int(raw: Any, label: str) -> int:
-    try:
-        return int(str(raw).strip())
-    except (TypeError, ValueError):
-        raise ApiError(INVALID_VALUE, f"「{label}」需要是整数", detail={"value": raw}) from None
+from app.services.params import as_int
 
 
 def resolve_class_id(spec: TableSpec, raw: Any, session: Session) -> int | None:
@@ -32,7 +26,7 @@ def resolve_class_id(spec: TableSpec, raw: Any, session: Session) -> int | None:
         return None
 
     if raw not in ("", None):
-        class_id = _as_int(raw, "classId")
+        class_id = as_int(raw, "classId")
         if session.get(Class, class_id) is None:
             raise ApiError(INVALID_VALUE, "指定的班级不存在", detail={"classId": class_id})
         return class_id
