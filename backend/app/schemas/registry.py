@@ -15,6 +15,7 @@ from typing import Any
 
 from app.db.base import Base
 from app.models.attendance import ATTENDANCE_TYPES, FOLLOW_UP_STATES, PERIODS, Attendance
+from app.models.exam import EXAM_KINDS, Exam
 from app.models.guardian import ROLES as GUARDIAN_ROLES
 from app.models.guardian import Guardian
 from app.models.homework import QUALITIES, RATE_MODES, SUBJECTS, Homework
@@ -25,6 +26,7 @@ from app.models.template import TONES as TEMPLATE_TONES
 from app.models.template import Template
 from app.models.todo import PRIORITIES, Todo
 from app.services.attendance_service import apply_attendance
+from app.services.exam_service import apply_exam
 from app.services.guardian_service import link_student
 from app.services.homework_service import apply_homework
 
@@ -310,6 +312,31 @@ ATTENDANCE = TableSpec(
     before_save=apply_attendance,
 )
 
+EXAM = TableSpec(
+    key="exams",
+    model=Exam,
+    title="考试管理",
+    entity="考试",
+    columns=(
+        ColumnSpec("name", "考试名称"),
+        ColumnSpec("date", "日期", w="104px", numeric=True),
+        ColumnSpec("kind", "类型", w="80px"),
+        ColumnSpec("note", "备注"),
+    ),
+    fields=(
+        FieldSpec("name", "考试名称", required=True, full=True, hint="如：2026 学年第二学期期末考"),
+        FieldSpec("date", "考试日期", type="date", required=True),
+        FieldSpec("kind", "考试类型", type="select", options=EXAM_KINDS, default="月考"),
+        FieldSpec("note", "备注", type="textarea", full=True),
+    ),
+    search_keys=("name", "note"),
+    filter_keys=("kind",),
+    default_sort=("date", -1),
+    dedupe_keys=("date", "name"),  # 同一天同名视为同一场，重复导入不翻倍
+    # 新建考试时按词表把科目表建出来（考试考哪几科必须当场确定，见 exam_service）
+    before_save=apply_exam,
+)
+
 GUARDIAN = TableSpec(
     key="guardians",
     model=Guardian,
@@ -348,7 +375,7 @@ GUARDIAN = TableSpec(
 )
 
 TABLES: dict[str, TableSpec] = {
-    spec.key: spec for spec in (TODO, RULE, TEMPLATE, GUARDIAN, HOMEWORK, ATTENDANCE)
+    spec.key: spec for spec in (TODO, RULE, TEMPLATE, GUARDIAN, HOMEWORK, ATTENDANCE, EXAM)
 }
 
 # 字段定义存在数据库里的表（学生档案）：spec 每次请求**现算**。

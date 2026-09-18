@@ -21,9 +21,11 @@ from sqlalchemy import Date, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin
+from app.models.vocab import SUBJECTS
 
-# 与旧应用一致（:6220 的 SUBJECTS）
-SUBJECTS = ("语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理")
+# 科目词表的家在 models/vocab.py（作业与成绩共用一份），这里保留 SUBJECTS 的
+# 导出以兼容既有 import；不要在别处再抄一份
+__all__ = ["SUBJECTS", "QUALITIES", "RATE_MODES", "Homework", "HomeworkUnsubmitted"]
 
 # 与旧应用一致（作业表单的 options）
 QUALITIES = ("优", "良", "中", "差")
