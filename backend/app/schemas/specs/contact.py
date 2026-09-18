@@ -13,7 +13,7 @@ from app.models.contact import ContactLog
 from app.models.guardian import ROLES as GUARDIAN_ROLES
 from app.models.guardian import Guardian
 from app.schemas.table_spec import ColumnSpec, FieldSpec, TableSpec
-from app.services.contact_service import link_contact_student
+from app.services.contact_service import link_contact_student_with_date
 from app.services.guardian_service import link_student
 
 GUARDIAN = TableSpec(
@@ -72,7 +72,7 @@ CONTACT = TableSpec(
         ColumnSpec("attachment_count", "附件", w="64px", numeric=True, sortable=False),
     ),
     fields=(
-        FieldSpec("date", "日期", type="date", required=True),
+        FieldSpec("date", "日期", type="date", hint="留空按今天"),
         FieldSpec(
             "student_name",
             "学生",
@@ -120,5 +120,5 @@ CONTACT = TableSpec(
     extra_keys=("student_id", "sno", "attachment_count"),
     # 这条表支持挂附件（照片 + 录音归档）—— 通用列表据此显示附件数与入口
     media_owner=True,
-    before_save=link_contact_student,
+    before_save=link_contact_student_with_date,
 )

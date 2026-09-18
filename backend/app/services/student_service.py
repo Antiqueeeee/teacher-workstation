@@ -12,12 +12,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.api.errors import INVALID_VALUE, ApiError
+from app.api.errors import INVALID_VALUE, NOT_FOUND, ApiError
 from app.db.engine import SessionLocal
+from app.models.attendance import ABSENCE_TYPES
 from app.models.student import Student, StudentFieldDef
 from app.schemas.registry import DYNAMIC_TABLES, ColumnSpec, FieldSpec, TableSpec
 from app.services.student_fields import build_defs_from_template
@@ -163,3 +164,260 @@ def register_dynamic_tables() -> None:
     漏掉一处的表现是「表不见了」（`get_spec("students")` 返回 None），很难往这里想。
     """
     DYNAMIC_TABLES["students"] = students_spec
+def archive(session: Session, student_id: int, *, recent: int = 5) -> dict[str, Any]:
+    """一生一档：一个学生在这套系统里的全部痕迹。
+
+    **每个数字都从它所属模块的口径服务取**（出勤率、成绩名次、作业欠交），
+    所以档案上的数与各页面对得上 —— 阶段 2 的验收就是「学生档案欠交次数、
+    首页待收、科目平均率三处数值一致」，那三处读的正是这里的同一份关系与口径。
+
+    各段只取最近 `recent` 条：档案是拿来「一眼看完」的，明细在各模块自己的页面里。
+    """
+    from app.models.attendance import Attendance
+    from app.models.communication import Conflict, Talk, Visit
+    from app.models.contact import ContactLog
+    from app.models.discipline import Discipline
+    from app.models.exam import Exam
+    from app.models.homework import Homework, HomeworkUnsubmitted
+    from app.models.media import Media
+    from app.models.welfare import Grant, HealthRecord
+    from app.services.attendance_rate import range_summary
+    from app.services.score_stats import build_report
+
+    student = session.get(Student, student_id)
+    if student is None or student.deleted_at is not None:
+        raise ApiError(NOT_FOUND, "这个学生不存在，可能已被删除", status=404, detail={"id": student_id})
+
+    def count(model, *conditions) -> int:
+        return session.scalar(select(func.count()).select_from(model).where(*conditions)) or 0
+
+    def latest(model, *conditions, order, limit: int | None = None):
+        query = select(model).where(*conditions).order_by(order)
+        return list(session.scalars(query.limit(limit if limit is not None else recent)))
+
+    # ---- 出勤：按类型计数 + 出勤率 ----
+    # 出勤率的分母是**这个班登记过的天数**（与出勤页同一口径）：
+    # 没登记的日子不算满勤，缺席也只在登记过的日子上才有意义
+    attendance_rows = latest(
+        Attendance, Attendance.student_id == student_id, order=Attendance.date.desc(), limit=200
+    )
+    by_type: dict[str, int] = {}
+    for row in attendance_rows:
+        by_type[row.type] = by_type.get(row.type, 0) + 1
+
+    absence_days = sum(1 for row in attendance_rows if row.type in ABSENCE_TYPES)
+    registered_days = 0
+    attendance_rate: int | None = None
+    # 窗口取**这个班登记过考勤的日子**，不是这个学生自己的记录范围 ——
+    # 否则「本学期只请过一次假」的分母只有那一天，算出来是 0%（第一次做就踩了）
+    span = session.execute(
+        select(func.min(Attendance.date), func.max(Attendance.date)).where(
+            Attendance.class_id == student.class_id
+        )
+    ).one()
+    if span[0] is not None:
+        registered_days = range_summary(session, student.class_id, span[0], span[1]).registered_days
+        if registered_days:
+            attendance_rate = round((registered_days - absence_days) / registered_days * 100)
+
+    # ---- 作业：欠交次数（与首页「作业待收」、作业页读的是同一张子表）----
+    late_links = latest(
+        HomeworkUnsubmitted,
+        HomeworkUnsubmitted.student_id == student_id,
+        order=HomeworkUnsubmitted.id.desc(),
+        limit=200,
+    )
+    late_recent: list[dict[str, Any]] = []
+    for link in late_links[:recent]:
+        homework = session.get(Homework, link.homework_id)
+        if homework is None or homework.deleted_at is not None:
+            continue
+        late_recent.append(
+            {
+                "id": homework.id,
+                "date": homework.date.isoformat(),
+                "subject": homework.subject,
+                "content": homework.content,
+            }
+        )
+
+    # ---- 成绩：最近几场的总分与名次（名次由 score_stats 现算，不落库）----
+    score_rows: list[dict[str, Any]] = []
+    for exam in latest(
+        Exam,
+        Exam.deleted_at.is_(None),
+        Exam.class_id == student.class_id,
+        order=Exam.date.desc(),
+        limit=recent,
+    ):
+        report = build_report(session, exam, include_previous=False)
+        match = [item for item in report.rows if item.student_id == student_id]
+        if not match:
+            continue
+        row = match[0]
+        score_rows.append(
+            {
+                "examId": exam.id,
+                "examName": exam.name,
+                "examDate": exam.date.isoformat(),
+                "total": row.total,
+                "rank": row.rank,
+                "tied": row.tied,
+                "scoreRate": row.score_rate,
+                "absent": row.absent,
+                "missing": row.missing,
+                "studentCount": len([item for item in report.rows if item.took_part]),
+            }
+        )
+
+    # ---- 矛盾调解：这个学生牵涉其中的（按子表的 student_id 匹配，不用姓名）----
+    involved = [
+        row
+        for row in session.scalars(
+            select(Conflict)
+            .where(Conflict.deleted_at.is_(None), Conflict.class_id == student.class_id)
+            .order_by(Conflict.date.desc())
+        )
+        if any(party.student_id == student_id for party in row.parties)
+    ]
+
+    grants_all = latest(
+        Grant, Grant.student_id == student_id, order=Grant.apply_date.desc(), limit=200
+    )
+    health = session.scalars(
+        select(HealthRecord).where(
+            HealthRecord.deleted_at.is_(None), HealthRecord.student_id == student_id
+        )
+    ).first()
+
+    return {
+        "student": {
+            "id": student.id,
+            "name": student.name,
+            "sno": student.sno,
+            "extra": student.extra or {},
+        },
+        "attendance": {
+            "byType": by_type,
+            "absenceDays": absence_days,
+            "registeredDays": registered_days,
+            "rate": attendance_rate,
+            "recent": [
+                {
+                    "id": row.id,
+                    "date": row.date.isoformat(),
+                    "type": row.type,
+                    "period": row.period,
+                    "reason": row.reason,
+                    "handled": row.handled,
+                }
+                for row in attendance_rows[:recent]
+            ],
+        },
+        "homework": {"lateCount": len(late_links), "recent": late_recent},
+        "scores": score_rows,
+        "discipline": {
+            "total": count(Discipline, Discipline.student_id == student_id),
+            "open": count(
+                Discipline, Discipline.student_id == student_id, Discipline.status != "已结案"
+            ),
+            "recent": [
+                {
+                    "id": row.id,
+                    "date": row.date.isoformat(),
+                    "type": row.type,
+                    "level": row.level,
+                    "status": row.status,
+                    "detail": row.detail,
+                }
+                for row in latest(
+                    Discipline, Discipline.student_id == student_id, order=Discipline.date.desc()
+                )
+            ],
+        },
+        "talks": {
+            "total": count(Talk, Talk.student_id == student_id),
+            "recent": [
+                {
+                    "id": row.id,
+                    "date": row.date.isoformat(),
+                    "type": row.type,
+                    "reason": row.reason,
+                }
+                for row in latest(Talk, Talk.student_id == student_id, order=Talk.date.desc())
+            ],
+        },
+        "visits": {
+            "total": count(Visit, Visit.student_id == student_id),
+            "recent": [
+                {
+                    "id": row.id,
+                    "date": row.date.isoformat(),
+                    "teacher": row.teacher,
+                    "consensus": row.consensus,
+                }
+                for row in latest(Visit, Visit.student_id == student_id, order=Visit.date.desc())
+            ],
+        },
+        "contacts": {
+            "total": count(ContactLog, ContactLog.student_id == student_id),
+            "followUp": count(
+                ContactLog,
+                ContactLog.student_id == student_id,
+                ContactLog.needs_follow_up.is_(True),
+            ),
+            "recent": [
+                {
+                    "id": row.id,
+                    "date": row.date.isoformat(),
+                    "channel": row.channel,
+                    "result": row.result,
+                    "content": row.content,
+                }
+                for row in latest(
+                    ContactLog, ContactLog.student_id == student_id, order=ContactLog.date.desc()
+                )
+            ],
+        },
+        "conflicts": {
+            "total": len(involved),
+            "recent": [
+                {
+                    "id": row.id,
+                    "date": row.date.isoformat(),
+                    "reason": row.reason,
+                    "level": row.level,
+                    "status": row.status,
+                }
+                for row in involved[:recent]
+            ],
+        },
+        "grants": {
+            "totalCents": sum(row.amount_cents for row in grants_all),
+            "recent": [
+                {
+                    "id": row.id,
+                    "date": row.apply_date.isoformat() if row.apply_date else "",
+                    "type": row.type,
+                    "amount": row.amount_display,
+                    "status": row.status,
+                }
+                for row in grants_all[:recent]
+            ],
+        },
+        "health": (
+            {
+                "id": health.id,
+                "type": health.type,
+                "level": health.level,
+                "detail": health.detail,
+                "emergency": health.emergency,
+                "contact": health.contact,
+                "phone": health.phone,
+                "limit": health.limit_note,
+            }
+            if health is not None
+            else None
+        ),
+        "attachments": count(Media, Media.deleted_at.is_(None), Media.student_id == student_id),
+    }

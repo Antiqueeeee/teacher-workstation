@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import INVALID_VALUE, ApiError
 from app.services.roster import find_student
+from app.services.hooks import chain, default_today
 
 
 def link_contact_student(values: dict[str, Any], session: Session, row: Any = None) -> None:
@@ -28,3 +29,7 @@ def link_contact_student(values: dict[str, Any], session: Session, row: Any = No
         raise ApiError(INVALID_VALUE, problem, detail={"field": "student_name", "value": name})
     values["student_id"] = student.id
     values["student_name"] = student.name
+
+
+# 声明里用这个：先解析学生，再补「日期留空按今天」
+link_contact_student_with_date = chain(link_contact_student, default_today())

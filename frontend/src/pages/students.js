@@ -10,6 +10,7 @@
  * 老师得先撞上一次才知道班上有重名。这里一次列全，让老师能主动去改。
  */
 
+import { openStudentArchive } from '../components/student-archive.js';
 import { api } from '../core/api.js';
 import { esc } from '../core/dom.js';
 import { store } from '../core/store.js';
@@ -56,4 +57,14 @@ export const studentsPageDef = {
   group: '学生管理',
   iconName: 'users',
   panel,
+  // 行内多一个入口：点开是「一生一档」（考勤/成绩/作业/违纪/谈话/家访/资助一眼看完）
+  rowActions: [
+    {
+      name: 'archive',
+      label: '档案',
+      async run(row) {
+        await openStudentArchive(row);
+      },
+    },
+  ],
 };

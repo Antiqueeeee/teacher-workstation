@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any, Callable
 
 from sqlalchemy.orm import Session
@@ -15,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import INVALID_VALUE, ApiError
 from app.models.communication import ConflictParty
 from app.services.roster import resolve_names, split_names, student_link_hook
+from app.services.hooks import chain, default_today
 
 link_visit_student = student_link_hook()
 link_talk_student = student_link_hook()
@@ -55,32 +55,7 @@ def apply_conflict(values: dict[str, Any], session: Session, row: Any = None) ->
     return after_save
 
 
-def apply_default_date(values: dict[str, Any], session: Session, row: Any = None) -> None:
-    """通用：日期留空按今天（旧应用这几张表的日期默认都是今天）。"""
-    if row is None and values.get("date") in (None, ""):
-        values["date"] = date.today()
-
-
-def chain(*hooks: Callable) -> Callable:
-    """把几个保存前钩子串成一个。
-
-    一张表往往既要把姓名解析成学生、又要补日期默认值 —— 注册表里 `before_save`
-    只放得下一个，所以给一个把它们串起来的工具；返回的**回调**也会按顺序都执行。
-    """
-    def run(values: dict[str, Any], session: Session, row: Any = None) -> Callable[[Any], None] | None:
-        callbacks = []
-        for hook in hooks:
-            produced = hook(values, session, row)
-            if callable(produced):
-                callbacks.append(produced)
-
-        def after_save(saved: Any) -> None:
-            for callback in callbacks:
-                callback(saved)
-
-        return after_save if callbacks else None
-
-    return run
+apply_default_date = default_today()
 
 
 link_visit_student_with_date = chain(link_visit_student, apply_default_date)

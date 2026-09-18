@@ -107,16 +107,24 @@ function sortMark(state, key) {
   return `<span class="sort-mark">${state.dir === 'asc' ? '▲' : '▼'}</span>`;
 }
 
-function rowActions(row, spec) {
+function rowActions(row, spec, extra = []) {
   if (row.deleted_at) {
     return `<button class="btn btn-sm" type="button" data-restore="${row.id}">恢复</button>`;
   }
+  // 页面自己声明的行内动作（例如学生档案的「一生一档」）
+  const custom = extra
+    .map(
+      (action) =>
+        `<button class="btn btn-sm" type="button" data-row-action="${esc(action.name)}"
+           data-row-id="${row.id}">${esc(action.label)}</button>`,
+    )
+    .join('');
   // 支持附件的表（沟通留档类）多一个入口：照片与录音归档都在里面
   const media = spec.mediaOwner
     ? `<button class="btn btn-sm" type="button" data-media="${row.id}"
          title="照片与录音归档">附件${row.attachment_count ? ` ${row.attachment_count}` : ''}</button>`
     : '';
-  return `${media}
+  return `${custom}${media}
     <button class="btn btn-sm" type="button" data-edit="${row.id}">编辑</button>
     <button class="btn btn-sm btn-ghost" type="button" data-del="${row.id}">删除</button>`;
 }
@@ -125,7 +133,7 @@ function deletedBadge(row) {
   return row.deleted_at ? '<span class="badge badge-rose">已删除</span> ' : '';
 }
 
-function tableHtml(spec, rows, state) {
+function tableHtml(spec, rows, state, extraActions) {
   const head = spec.columns
     .map((column) =>
       column.sortable
@@ -147,7 +155,7 @@ function tableHtml(spec, rows, state) {
         .join('');
       return `<tr>
         ${cells}
-        <td class="actions">${deletedBadge(row)}${rowActions(row, spec)}</td>
+        <td class="actions">${deletedBadge(row)}${rowActions(row, spec, extraActions)}</td>
       </tr>`;
     })
     .join('');
@@ -162,7 +170,7 @@ function tableHtml(spec, rows, state) {
 }
 
 /** 窄屏卡片视图：一行信息读完，动作按钮放在卡片底部（拇指够得到）。 */
-function cardsHtml(spec, rows) {
+function cardsHtml(spec, rows, extraActions = []) {
   const [primary, ...rest] = spec.columns;
   return `
     <div class="cards only-narrow">
@@ -182,14 +190,14 @@ function cardsHtml(spec, rows) {
               ${deletedBadge(row)}
             </div>
             ${details}
-            <div class="toolbar" style="margin:10px 0 0">${rowActions(row, spec)}</div>
+            <div class="toolbar" style="margin:10px 0 0">${rowActions(row, spec, extraActions)}</div>
           </div>`;
         })
         .join('')}
     </div>`;
 }
 
-function listHtml(spec, rows, meta, state) {
+function listHtml(spec, rows, meta, state, extraActions = []) {
   if (!rows.length) {
     const filtered = state.q || Object.values(state.filters || {}).some(Boolean);
     return `<div class="empty">
@@ -199,8 +207,8 @@ function listHtml(spec, rows, meta, state) {
   }
   const pages = Math.max(1, Math.ceil(meta.total / meta.pageSize));
   return `
-    ${tableHtml(spec, rows, state)}
-    ${cardsHtml(spec, rows)}
+    ${tableHtml(spec, rows, state, extraActions)}
+    ${cardsHtml(spec, rows, extraActions)}
     <div class="pager">
       <span class="page-info">共 ${meta.total} 条，第 ${meta.page} / ${pages} 页</span>
       <select class="select" style="width:auto" data-page-size>
@@ -222,6 +230,7 @@ export function createCrudPage({
   iconName = 'list',
   actions = [],
   panel = null,
+  rowActions: rowActionsDef = [],
 }) {
   if (!spec) throw new Error(`页面 ${specKey} 找不到对应的表声明：注册表里没有 ${specKey}`);
 
@@ -264,7 +273,7 @@ export function createCrudPage({
     try {
       const list = await api.list(spec.key, params());
       rowsById = new Map(list.rows.map((row) => [String(row.id), row]));
-      area.innerHTML = listHtml(spec, list.rows, list.meta, state);
+      area.innerHTML = listHtml(spec, list.rows, list.meta, state, rowActionsDef);
       const kpi = root.querySelector('[data-kpi]');
       const stats = await loadStats();
       if (kpi && stats) kpi.innerHTML = kpiHtml(spec, stats);
@@ -341,6 +350,15 @@ export function createCrudPage({
       if (actionButton) {
         const action = actions.find((item) => item.name === actionButton.dataset.pageAction);
         if (action) await action.run(context());
+        return;
+      }
+
+      const rowAction = target.closest('[data-row-action]');
+      if (rowAction) {
+        const action = rowActionsDef.find((item) => item.name === rowAction.dataset.rowAction);
+        if (action) {
+          await action.run(rowsById.get(rowAction.dataset.rowId), context());
+        }
         return;
       }
 
@@ -425,7 +443,7 @@ export function createCrudPage({
           <div data-kpi>${kpiHtml(spec, stats)}</div>
           ${panelHtml ? `<div data-panel>${panelHtml}</div>` : ''}
           ${toolbarHtml(spec, state, actions)}
-          <div data-list>${listHtml(spec, list.rows, list.meta, state)}</div>`,
+          <div data-list>${listHtml(spec, list.rows, list.meta, state, rowActionsDef)}</div>`,
         bind: (root) => bindEvents(root),
       };
     },

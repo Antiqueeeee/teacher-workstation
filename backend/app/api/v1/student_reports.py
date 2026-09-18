@@ -21,9 +21,15 @@ from sqlalchemy.orm import Session
 from app.db.engine import get_session
 from app.schemas.registry import get_spec
 from app.services.class_scope import resolve_class_id
-from app.services.student_service import identity_conflicts
+from app.services.student_service import archive, identity_conflicts
 
 router = APIRouter(prefix="/students", tags=["学生档案"])
+
+
+@router.get("/{student_id}/archive")
+def student_archive(student_id: int, session: Session = Depends(get_session)):
+    """一生一档：一个学生在这套系统里的全部痕迹（各段的数都从所属模块的口径服务取）。"""
+    return {"ok": True, "data": archive(session, student_id)}
 
 
 @router.get("/name-conflicts")

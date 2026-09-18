@@ -158,6 +158,9 @@ export const api = {
   /** 按日期（可选按学生）真正清理媒体文件 —— 不进回收站，界面要二次确认。 */
   mediaPurge: (payload) => request("/media/purge", { method: "POST", body: payload }).then((p) => p.data),
 
+  /** 学生一生一档：后端聚合的全部痕迹（各段的数都从所属模块的口径服务取）。 */
+  studentArchive: (studentId) => request(`/students/${studentId}/archive`).then((p) => p.data),
+
   /** 学生档案：同名/同学号冲突报告（学生档案页面顶部据此提示）。 */
   studentConflicts: (classId) =>
     request('/students/name-conflicts', { params: { classId } }).then((p) => p.data),
