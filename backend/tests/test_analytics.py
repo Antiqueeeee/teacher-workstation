@@ -276,8 +276,9 @@ def test_substitute_brief_gathers_the_days_situation(client, db_session):
     assert brief["discipline"][0]["studentName"] == "简报学生甲"
     assert brief["rules"][0]["title"] == "上课不许吃东西"
     assert brief["seats"]["rows"] >= 1
-    # 缺的那一段如实说明（今日课表要等课程表模块）
-    assert brief["missingSections"]
+    # 课表已落地：这段现在从课表里取（留空则没有课）
+    assert brief["todaySlots"] == []
+    assert brief["missingSections"] == []
 
 
 def test_substitute_brief_flags_an_unregistered_day(client, db_session):

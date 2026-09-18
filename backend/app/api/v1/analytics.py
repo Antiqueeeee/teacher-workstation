@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db.engine import get_session
 from app.schemas.registry import CONTACT
-from app.services.analytics_service import dashboard, followups, overview, substitute_brief
+from app.services.analytics_service import dashboard, followups, overview, substitute_brief, timeline
 from app.services.class_scope import resolve_class_id
 from app.services.params import as_date
 
@@ -61,3 +61,17 @@ def get_dashboard(request: Request, session: Session = Depends(get_session)):
     except ValueError:
         days = 14
     return {"ok": True, "data": dashboard(session, _class_id(request, session), days=days)}
+
+
+@router.get("/timeline")
+def get_timeline(request: Request, session: Session = Depends(get_session)):
+    """学期时间轴：把几类留档按日期合成一条时间线（分页取） 。"""
+    params = request.query_params
+    try:
+        limit = int(params.get("limit") or 50)
+    except ValueError:
+        limit = 50
+    return {
+        "ok": True,
+        "data": timeline(session, _class_id(request, session), limit=limit),
+    }

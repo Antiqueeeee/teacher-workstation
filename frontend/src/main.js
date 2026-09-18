@@ -16,6 +16,7 @@ import { getSpec, setRegistry } from './core/store.js';
 import { attendancePageDef } from './pages/attendance.js';
 import { dormDutyPageDef } from './pages/dorm-duty.js';
 import { contactsPageDef } from './pages/contacts.js';
+import { countdownsPageDef } from './pages/countdowns.js';
 import { homePage } from './pages/home.js';
 import { cadresPageDef } from './pages/cadres.js';
 import { activitiesPageDef } from './pages/class_activities.js';
@@ -34,6 +35,7 @@ import { dashboardPage } from './pages/dashboard.js';
 import { disciplinesPageDef } from './pages/disciplines.js';
 import { talksPageDef } from './pages/talks.js';
 import { visitsPageDef } from './pages/visits.js';
+import { schedulePageDef } from './pages/schedule.js';
 import { scoresPageDef } from './pages/scores.js';
 import { seatsPageDef } from './pages/seats.js';
 import { settingsPage } from './pages/settings.js';
@@ -66,10 +68,12 @@ const PAGE_DEFS = [
   feesPageDef,
   attendancePageDef,
   homeworkPageDef,
+  schedulePageDef,
   scoresPageDef,
   dormsPageDef,
   dormDutyPageDef,
   seatsPageDef,
+  countdownsPageDef,
   todosPageDef,
   rulesPageDef,
   templatesPageDef,

@@ -98,6 +98,18 @@ export const substitutePage = {
           ${data.missingSections.length ? `<span class="muted no-print">暂缺：${esc(data.missingSections.join('、'))}</span>` : ''}
         </div>
 
+        ${block(
+          '今天的课表',
+          data.todaySlots && data.todaySlots.length
+            ? `<ul class="plain-list">${data.todaySlots
+                .map(
+                  (slot) =>
+                    `<li>${esc(slot.period)}：${esc(slot.subject || '（没填科目）')}
+                      ${slot.teacher ? `· ${esc(slot.teacher)}` : ''}${slot.room ? ` · ${esc(slot.room)}` : ''}</li>`,
+                )
+                .join('')}</ul>`
+            : '<div class="muted">课表里还没排今天（或者今天本来就没课）</div>',
+        )}
         ${block('一定要先看的（特殊体质）', healthHtml(data.health))}
         ${block('今天的考勤', attendanceHtml(data.attendance))}
         ${block(

@@ -165,6 +165,9 @@ export const api = {
   clearData: (payload, classId) =>
     request('/settings/clear', { method: 'POST', body: payload, params: { classId } }).then((p) => p.data),
 
+  /** 时间轴：几类留档按日期合成的一条线（后端合，加一类只改一处）。 */
+  timeline: (classId, limit) => request('/analytics/timeline', { params: { classId, limit } }).then((p) => p.data),
+
   /** 数据看板：出勤趋势、违纪分布、Top 榜、月度走势。 */
   dashboard: (days, classId) => request('/analytics/dashboard', { params: { days, classId } }).then((p) => p.data),
 

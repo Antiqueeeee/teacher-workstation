@@ -100,10 +100,12 @@ export const homePage = {
   async render() {
     let data;
     let items;
+    let feed;
     try {
-      [data, items] = await Promise.all([
+      [data, items, feed] = await Promise.all([
         api.overview(store.currentClassId),
         api.followups(store.currentClassId, 14),
+        api.timeline(store.currentClassId, 8),
       ]);
     } catch (error) {
       return { html: errorCard(error) };
@@ -142,6 +144,22 @@ export const homePage = {
         <div class="board-head"><span class="board-title">需要我跟进</span>
           <span class="muted">点一条跳到那条记录</span></div>
         ${followupHtml(items)}
+      </div>
+
+      <div class="board">
+        <div class="board-head"><span class="board-title">最近动态</span>
+          <span class="muted">沟通留档与班级事务按日期合并</span></div>
+        ${
+          feed.length
+            ? `<ul class="plain-list">${feed
+                .map(
+                  (item) =>
+                    `<li>${esc(item.date)} <span class="badge badge-ice">${esc(item.label)}</span>
+                      ${esc(item.studentName ? `${item.studentName} ` : '')}${esc(item.text)}</li>`,
+                )
+                .join('')}</ul>`
+            : '<div class="muted">还没有记录</div>'
+        }
       </div>
 
       <div class="board">

@@ -313,6 +313,9 @@ def substitute_brief(session: Session, class_id: int, day: date) -> dict[str, An
     )
 
     seats = seat_board(session, class_id)
+    from app.services.schedule_service import today_slots
+
+    slots = today_slots(session, class_id, weekday_no)
 
     return {
         "date": day.isoformat(),
@@ -360,8 +363,9 @@ def substitute_brief(session: Session, class_id: int, day: date) -> dict[str, An
                 for line in seats["grid"]
             ],
         },
-        # 如实说明缺了哪一段，而不是留一块空白让人猜
-        "missingSections": ["今日课表（要等「课程表」模块落地）"],
+        "todaySlots": slots,
+        # 缺的段如实写出来，而不是留一块空白让人猜（课表已落地，这一项现在是空的）
+        "missingSections": [],
     }
 
 
@@ -454,3 +458,45 @@ def dashboard(session: Session, class_id: int, *, days: int = 14, months: int = 
             "events": month_counts(ClassEvent, "date"),
         },
     }
+
+
+def timeline(session: Session, class_id: int, *, limit: int = 50) -> list[dict[str, Any]]:
+    """学期时间轴：把几类留档按日期合成一条时间线。
+
+    旧应用的时间轴是前端把 6 张表拉下来合并的（`timelineAll`），表一多就得改前端；
+    这里在后端合，加一类留档只改这一处。
+    """
+    from app.models.communication import ClassActivity, ClassEvent, Conflict, Meeting, Talk, Visit
+    from app.models.contact import ContactLog
+    from app.models.discipline import Discipline
+
+    sources = (
+        ("contacts", "家长联系", ContactLog, "content", "id"),
+        ("talks", "谈话", Talk, "reason", "id"),
+        ("visits", "家访", Visit, "consensus", "id"),
+        ("meetings", "主题班会", Meeting, "theme", "id"),
+        ("class_activities", "班级活动", ClassActivity, "title", "id"),
+        ("class_events", "大事记", ClassEvent, "title", "id"),
+        ("conflicts", "矛盾调解", Conflict, "reason", "id"),
+        ("disciplines", "违纪", Discipline, "detail", "id"),
+    )
+
+    items: list[dict[str, Any]] = []
+    for key, label, model, text_column, _ in sources:
+        for row in session.scalars(
+            select(model).where(model.deleted_at.is_(None), model.class_id == class_id)
+        ):
+            text = str(getattr(row, text_column) or "").strip()
+            items.append(
+                {
+                    "table": key,
+                    "label": label,
+                    "id": row.id,
+                    "date": row.date.isoformat(),
+                    "studentName": getattr(row, "student_name", ""),
+                    "text": text[:60],
+                }
+            )
+    # 日期倒序；同一天按表名分组，保证同一份数据每次顺序一致
+    items.sort(key=lambda item: (item["date"], item["table"], item["id"]), reverse=True)
+    return items[: max(1, min(limit, 200))]

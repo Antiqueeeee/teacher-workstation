@@ -25,6 +25,7 @@ from app.models.guardian import Guardian
 from app.models.homework import Homework, HomeworkUnsubmitted
 from app.models.media import Media
 from app.models.rule import Rule
+from app.models.schedule import Countdown, ScheduleSlot
 from app.models.seat import Seat, SeatPlan
 from app.models.student import Student, StudentFieldDef
 from app.models.template import Template
@@ -37,6 +38,7 @@ __all__ = [
     "Class",
     "Cadre",
     "ContactLog",
+    "Countdown",
     "Visit",
     "Talk",
     "Meeting",
@@ -62,6 +64,7 @@ __all__ = [
     "HomeworkUnsubmitted",
     "Media",
     "Rule",
+    "ScheduleSlot",
     "Seat",
     "SeatPlan",
     "Score",
