@@ -158,6 +158,13 @@ export const api = {
   /** 按日期（可选按学生）真正清理媒体文件 —— 不进回收站，界面要二次确认。 */
   mediaPurge: (payload) => request("/media/purge", { method: "POST", body: payload }).then((p) => p.data),
 
+  /** 设置：班级信息、存储占用与分表行数、清空数据。 */
+  settings: (classId) => request('/settings', { params: { classId } }).then((p) => p.data),
+  saveClassInfo: (payload, classId) =>
+    request('/settings/class', { method: 'PUT', body: payload, params: { classId } }).then((p) => p.data),
+  clearData: (payload, classId) =>
+    request('/settings/clear', { method: 'POST', body: payload, params: { classId } }).then((p) => p.data),
+
   /** 代课/交接简报（某一天；后端汇总，用的还是各模块自己的口径）。 */
   substituteBrief: (date, classId) =>
     request('/analytics/substitute', { params: { date, classId } }).then((p) => p.data),

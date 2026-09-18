@@ -35,6 +35,7 @@ import { talksPageDef } from './pages/talks.js';
 import { visitsPageDef } from './pages/visits.js';
 import { scoresPageDef } from './pages/scores.js';
 import { seatsPageDef } from './pages/seats.js';
+import { settingsPage } from './pages/settings.js';
 import { studentsPageDef } from './pages/students.js';
 import { substitutePage } from './pages/substitute.js';
 import { youthMembersPageDef } from './pages/youth_members.js';
@@ -70,6 +71,7 @@ const PAGE_DEFS = [
   todosPageDef,
   rulesPageDef,
   templatesPageDef,
+  settingsPage,
 ];
 
 /** 数据就绪后才构建页面对象（见各 pages/*.js 顶部说明）。 */
