@@ -1,0 +1,66 @@
+/* ============================================================
+   设计令牌 —— 沿用旧应用「班主任工作台 · Pingu 主题」的配色
+   （冰蓝 + 雪白 + 企鹅墨 + 喙橙）。
+   视觉要复刻，不另发明一套；暗色值取自旧应用的 body.theme-dark。
+   ============================================================ */
+
+:root {
+  /* 主色：冰川蓝 */
+  --ice-50: #f2fafd; --ice-100: #e3f4fa; --ice-200: #c6e9f4; --ice-300: #9bd9ec;
+  --ice-400: #6ac4e0; --ice-500: #3fafd4; --ice-600: #2a93b8; --ice-700: #217794;
+
+  /* 企鹅墨 */
+  --ink-900: #1b2b36; --ink-800: #263b49; --ink-700: #36505f; --ink-600: #4e6a79;
+  --ink-500: #6b8593; --ink-400: #93a9b5; --ink-300: #bacad3; --ink-200: #dce6ec;
+  --ink-100: #edf3f6; --ink-50: #f4f9fc;
+
+  /* 喙橙 */
+  --beak-100: #fff1e0; --beak-200: #ffdcb5; --beak-400: #ffb25c; --beak-500: #ff9a3c; --beak-600: #f07e1c;
+
+  /* 语义色 */
+  --mint-100: #e1f7f0; --mint-500: #3fc7a3; --mint-600: #27a987;
+  --rose-100: #ffecec; --rose-500: #ff6b6b; --rose-600: #e84c4c;
+  --sun-100: #fff6dc; --sun-500: #f0be3c; --sun-600: #d9a419;
+  --grape-100: #f0ecff; --grape-500: #8b7be8;
+
+  --bg: #f4fafd;
+  --surface: #ffffff;
+  --border: #dfebf1;
+
+  --shadow-sm: 0 1px 2px rgba(27, 43, 54, 0.05), 0 1px 3px rgba(27, 43, 54, 0.06);
+  --shadow: 0 2px 8px rgba(38, 90, 115, 0.07), 0 6px 20px rgba(38, 90, 115, 0.06);
+  --shadow-lg: 0 8px 28px rgba(38, 90, 115, 0.13), 0 2px 8px rgba(38, 90, 115, 0.08);
+
+  --r-sm: 8px; --r: 12px; --r-lg: 18px; --r-xl: 24px;
+  --side-w: 244px;
+  --topbar-h: 56px;
+  /* 触控目标下限：手机端手指点得中的最小尺寸 */
+  --tap: 44px;
+
+  --font: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Source Han Sans SC",
+    "Noto Sans CJK SC", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* 暗色：变量名不变，只换值 —— 组件 CSS 因此不需要写两套 */
+body.theme-dark {
+  --bg: #0f1922;
+  --surface: #18242f;
+  --border: #2a3a47;
+
+  --ink-900: #ffffff; --ink-800: #f4f8fb; --ink-700: #e6eef3; --ink-600: #cdd9e0;
+  --ink-500: #a4b5c1; --ink-400: #8295a3; --ink-300: #3d4e5a; --ink-200: #2a3a47;
+  --ink-100: #1e2c37; --ink-50: #16212b;
+
+  --ice-50: #14222c; --ice-100: #19303c; --ice-200: #21414f; --ice-300: #2c586b;
+  --ice-400: #56b0cc; --ice-500: #6cc0da; --ice-600: #3fafd4; --ice-700: #2a93b8;
+
+  --mint-100: #1a332b; --mint-600: #5dd9b5;
+  --rose-100: #331e1e; --rose-600: #ff9090;
+  --beak-100: #332718; --beak-200: #4a3318; --beak-600: #ffb25c;
+  --sun-100: #332a14; --sun-600: #f0be3c;
+  --grape-100: #241f38;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32), 0 1px 3px rgba(0, 0, 0, 0.36);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.45);
+}

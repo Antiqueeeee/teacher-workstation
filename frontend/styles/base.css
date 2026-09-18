@@ -1,0 +1,60 @@
+/* ============================================================
+   基础样式：reset、排版、滚动条、通用小工具
+   注意：字体只用系统字体栈，图标只用内联 SVG —— 部署环境离线，
+   任何外部字体/图标 CDN 都会让页面在目标机器上变样或变慢。
+   ============================================================ */
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--bg);
+  color: var(--ink-800);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+
+h1, h2, h3, h4 { margin: 0; font-weight: 700; color: var(--ink-900); line-height: 1.35; }
+h3 { font-size: 15px; }
+
+a { color: var(--ice-600); text-decoration: none; }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ink-200); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-300); }
+
+/* ---------- 小工具 ---------- */
+.muted { color: var(--ink-500); font-size: 12.5px; }
+.nowrap { white-space: nowrap; }
+.grow { flex: 1; }
+.hidden { display: none !important; }
+
+.empty {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--ink-500);
+  font-size: 13.5px;
+}
+
+.empty strong { display: block; margin-bottom: 6px; color: var(--ink-700); font-size: 14.5px; }
+
+/* 窄屏/宽屏专用元素。手机端是一等公民，不是「能看就行」，
+   所以切换靠这一对工具类，而不是给每个组件写两套。
+   注意：默认窄屏可见，宽屏由 media query 反向覆盖。 */
+.only-narrow { display: block; }
+.only-wide { display: none; }
+
+@media (min-width: 769px) {
+  .only-narrow { display: none !important; }
+  .only-wide { display: block; }
+}
+
+/* 焦点可见：键盘操作（以及触屏外接键盘）时要看得见焦点在哪 */
+:focus-visible { outline: 2px solid var(--ice-500); outline-offset: 2px; }

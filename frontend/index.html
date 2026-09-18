@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>班主任工作台</title>
+  <!-- 无构建步骤：直接引 ES 模块；样式按职责分文件 -->
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/base.css">
+  <link rel="stylesheet" href="/styles/layout.css">
+  <link rel="stylesheet" href="/styles/components.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">班</span>
+        <div class="brand-text">
+          <strong>班主任工作台</strong>
+          <span id="brand-sub">本地部署 · 离线可用</span>
+        </div>
+      </div>
+      <nav class="nav" id="nav" aria-label="主导航"></nav>
+      <div class="sidebar-foot">
+        <span class="muted" id="side-hint"></span>
+      </div>
+    </aside>
+
+    <div class="scrim" id="scrim" hidden></div>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn only-narrow" id="menu-btn" type="button" aria-label="打开菜单">≡</button>
+        <h1 class="page-title" id="page-title">班主任工作台</h1>
+        <div class="topbar-right" id="topbar-right"></div>
+      </header>
+      <div class="content" id="content">
+        <div class="empty">正在启动…</div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div id="modal-root"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
