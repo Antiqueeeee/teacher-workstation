@@ -9,9 +9,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
+from sqlalchemy.orm import Session
 
 from app.api.committing_route import CommittingRoute
+from app.api.session import db_session
 from app.api.v1.attendance_day import router as attendance_day_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.class_roles import router as class_roles_router
@@ -37,8 +39,19 @@ router = APIRouter(prefix="/api/v1", route_class=CommittingRoute)
 
 
 @router.get("/health", tags=["系统"])
-def health() -> dict:
-    return {"ok": True, "data": {"version": APP_VERSION, "tables": len(all_specs())}}
+def health(session: Session = Depends(db_session)) -> dict:
+    from app.services.settings_service import demo_info
+
+    return {
+        "ok": True,
+        "data": {
+            "version": APP_VERSION,
+            "tables": len(all_specs()),
+            # 这份库里装的是演示夹具吗（界面顶部据此标注「演示数据」，
+            # 否则开发/演示时的假学生会被当成真实数据）
+            "demo": demo_info(session),
+        },
+    }
 
 
 @router.get("/meta/registry", tags=["系统"])

@@ -27,7 +27,7 @@ FIXTURE = BACKEND / "tests" / "fixtures" / "demo_dataset.json"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.config import DATA_DIR  # noqa: E402
@@ -37,6 +37,7 @@ from app.models.class_ import Class  # noqa: E402
 from app.models.student import Student  # noqa: E402
 from app.schemas.registry import get_spec  # noqa: E402
 from app.services import import_service  # noqa: E402
+from app.services.settings_service import mark_demo_data  # noqa: E402
 from app.services.student_fields import seed_field_defs  # noqa: E402
 from app.services.student_service import register_dynamic_tables  # noqa: E402
 
@@ -228,7 +229,24 @@ def main() -> int:
         if patched:
             print(f"- 学生档案：补上家庭住址 {patched} 条")
 
+        # 打上标记：这份库里是**卖家给的假数据**。界面上会因此显示「演示数据」横幅 ——
+        # 不标的话，开发/演示时看到 45 个假学生，交接时会被当成系统里已有真实数据
+        demo_students = session.scalar(select(func.count()).select_from(Student).where(
+            Student.class_id == class_id, Student.deleted_at.is_(None)
+        )) or 0
+        mark_demo_data(
+            session,
+            {
+                "source": "backend/tests/fixtures/demo_dataset.json",
+                "students": demo_students,
+                "note": "卖家给的假数据，用于对照与联调；老师的部署里不会有它",
+            },
+        )
+        session.commit()
+
     print(f"完成：本次新增 {created_total} 条")
+    print("提醒：这份库里现在是**演示数据**，界面上会标出来。想还原成空系统，"
+          "在「设置」里清空数据即可（标记也会一起摘掉）。")
     return 0
 
 

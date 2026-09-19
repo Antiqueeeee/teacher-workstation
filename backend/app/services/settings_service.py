@@ -8,6 +8,10 @@
    未交名单、考试科目、调解参与人一起删光，而界面上完全看不出来（阶段 5 评审实测）；
 3. 动手之前先报**会删掉多少行**，让老师看清影响；
 4. 媒体文件**默认不动**（几千张照片删了找不回来），要一起删得显式说明。
+
+另外管着「演示数据」这个标记：卖家给的假数据（`tools/load_fixture.py` 灌进开发库的那批）
+必须在界面上**标出来**，否则开发/演示时看到 45 个假学生，交接时会被当成系统里已有真实数据
+（`04` 的风险表里预判过这一条，但对策一直没落到代码上 —— 用户 2026-09 就是这么问的）。
 """
 
 from __future__ import annotations
@@ -19,11 +23,46 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import INVALID_VALUE, NOT_FOUND, ApiError
 from app.db.base import Base
+from app.models.app_state import AppState
 from app.models.class_ import Class
 from app.storage import media_store
 
 # 清空数据时要**保留**的表：班级本身与字段定义、应用配置是「骨架」，不是业务数据。
 KEEP_TABLES = {"classes", "student_field_def", "app_state"}
+
+# 「当前库里装的是演示夹具」这个标记的键（值里记着装了多少、什么时候装的）
+DEMO_FLAG_KEY = "demo_data"
+
+
+def demo_info(session: Session) -> dict[str, Any] | None:
+    """这份库里装的是演示夹具吗？是的话返回它的说明，否则 None。
+
+    只认这个标记，**不去猜**「看起来像假数据」—— 猜错的后果是老师自己的数据被打上
+    「演示数据」的标，那比不标更糟。
+    """
+    row = session.get(AppState, DEMO_FLAG_KEY)
+    value = row.value if row is not None else None
+    return value if isinstance(value, dict) else None
+
+
+def mark_demo_data(session: Session, payload: dict[str, Any]) -> None:
+    """打上「演示数据」标记（`tools/load_fixture.py` 装载完调用）。"""
+    row = session.get(AppState, DEMO_FLAG_KEY)
+    if row is None:
+        session.add(AppState(key=DEMO_FLAG_KEY, value=payload))
+    else:
+        row.value = payload
+    session.flush()
+
+
+def clear_demo_flag(session: Session) -> bool:
+    """摘掉标记。清空数据时调用 —— 数据都被清掉了，就不该再挂着「演示数据」。"""
+    row = session.get(AppState, DEMO_FLAG_KEY)
+    if row is None:
+        return False
+    session.delete(row)
+    session.flush()
+    return True
 
 # 跨班共享的表：它们没有 class_id，但**不属于某一个班** —— 清一个班不该动它们。
 # 模板是全班共用的素材；课程天生跨班（任课教师一门课教几个班，清掉一个班的块
@@ -196,6 +235,8 @@ def clear_business_data(
 
     before = table_counts(session, class_id)
     removed = 0
+    # 数据都清掉了，就不该再挂着「演示数据」的标（那个标指的是**这批夹具**）
+    clear_demo_flag(session)
 
     # 先子表后主表：外键开着，先删主表会被约束拦下
     for table in reversed(Base.metadata.sorted_tables):

@@ -122,3 +122,12 @@
   cursor: pointer;
 }
 .icon-btn:hover { border-color: var(--ice-400); color: var(--ice-600); }
+
+/* 演示数据横幅（开发/联调时标出来，别被当成真实数据） */
+.demo-banner {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 0 0 12px; padding: 9px 12px;
+  background: var(--beak-100); border: 1px solid var(--beak-200);
+  border-radius: var(--r); color: var(--ink-700); font-size: 12.5px; line-height: 1.6;
+}
+.demo-banner svg { flex: 0 0 auto; margin-top: 1px; color: var(--beak-600); }

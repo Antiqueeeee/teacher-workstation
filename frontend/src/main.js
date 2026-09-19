@@ -183,11 +183,32 @@ async function bootstrap() {
   try {
     const health = await api.health();
     qs('#side-hint').textContent = `v${health.version} · 共 ${health.tables} 个模块`;
+    showDemoBanner(health.demo);
   } catch {
     /* 健康检查失败不影响使用：注册表已经拿到了 */
   }
 
   await start();
+}
+
+/**
+ * 演示数据横幅。
+ *
+ * 开发/联调时库里装的可能是卖家给的假数据（`tools/load_fixture.py` 灌的）。
+ * **必须标出来** —— 否则交接或演示时，那 45 个假学生会被当成系统里已有的真实数据。
+ * 标记由后端给（`/health` 的 `demo`），前端不猜；清空数据后标记会一起摘掉。
+ */
+function showDemoBanner(demo) {
+  const banner = qs('#demo-banner');
+  if (!banner) return;
+  if (!demo) {
+    banner.hidden = true;
+    return;
+  }
+  banner.hidden = false;
+  banner.innerHTML = `${icon('info')}<span><strong>演示数据</strong>：这份库里装的是卖家给的假数据（${
+    demo.students || 0
+  } 名学生），只用于对照与联调，不是你班上的真实数据。想还原成空系统，去「设置」里清空数据。</span>`;
 }
 
 bootstrap();

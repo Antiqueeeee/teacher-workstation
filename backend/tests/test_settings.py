@@ -250,3 +250,31 @@ def test_every_table_has_a_clear_rule():
     from app.services.settings_service import unclassified_tables
 
     assert unclassified_tables() == set()
+
+
+def test_demo_data_is_flagged_and_the_flag_clears_with_the_data(client, db_session):
+    """演示夹具要被**标出来**，清空数据后标记一起摘掉。
+
+    卖家给的假数据灌进开发库是为了对照与联调（`tools/load_fixture.py`），
+    但界面上不标的话，开发/演示时看到 45 个假学生会被当成真实数据
+    （`04` 风险表预判过，用户 2026-09 就是这么问的）。
+    """
+    from app.models.app_state import AppState
+    from app.services.settings_service import clear_demo_flag, demo_info, mark_demo_data
+
+    class_id = _class_id(db_session)
+    # 空系统：没有标记，界面上不显示横幅
+    assert demo_info(db_session) is None
+    assert client.get("/api/v1/health").json()["data"]["demo"] is None
+
+    # 装载夹具后打标（夹具脚本走的就是这个函数）
+    mark_demo_data(db_session, {"source": "demo_dataset.json", "students": 45})
+    db_session.commit()
+    assert demo_info(db_session)["students"] == 45
+    assert client.get("/api/v1/health").json()["data"]["demo"]["students"] == 45
+
+    # 老师清空数据 → 数据没了，标记也不该继续挂着
+    client.post("/api/v1/settings/clear", json={"confirm": "清空"}, params={"classId": class_id})
+    assert db_session.get(AppState, "demo_data") is None
+    assert client.get("/api/v1/health").json()["data"]["demo"] is None
+    assert clear_demo_flag(db_session) is False  # 再摘一次不报错，只是没得摘
