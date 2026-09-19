@@ -35,16 +35,51 @@ def lan_ip() -> str:
             probe.close()
 
 
-def access_info(port: int | None = None) -> dict:
-    """这台电脑上的访问地址：本机与局域网各一个。
+def all_lan_ips() -> list[str]:
+    """本机所有可用的 IPv4（本机回环与链路本地地址除外），**探到的那个排第一**。
+
+    为什么需要「所有」：装了 VPN、虚拟机或一堆网卡的电脑上，内核选出来的「默认出口」
+    很可能是虚拟网卡 —— 那个地址手机根本连不上，而老师看不出哪儿错了
+    （评审点过这个缺口）。所以把候选都列出来，让他换一个试。
+    """
+    primary = lan_ip()
+    found: list[str] = []
+    for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+        ip = info[4][0]
+        if ip == "127.0.0.1" or ip.startswith("169.254.") or ip in found:
+            continue
+        found.append(ip)
+    if primary not in found and primary != "127.0.0.1":
+        found.insert(0, primary)
+    elif primary in found:
+        found.remove(primary)
+        found.insert(0, primary)
+    return found or [primary]
+
+
+def is_local_ip(ip: str) -> bool:
+    """这个地址是不是本机的？（界面「换一个地址」用它做校验，别变成任意二维码生成器）"""
+    return ip in all_lan_ips() or ip == "127.0.0.1"
+
+
+def access_info(port: int | None = None, address: str | None = None) -> dict:
+    """这台电脑上的访问地址：本机 + 局域网（可指定用哪张网卡的地址）。
 
     `lan` 是**手机要输的地址**（同一 WiFi 下可达）；`local` 只在本机有效。
+    `alternatives` 是其它网卡上可能的地址（装了 VPN / 虚拟机时会有多个），
+    老师按界面上的「换一个地址」挑选 —— 顺序按「探到的那个优先」。
     """
     resolved = port or PORT
+    chosen = address or lan_ip()
     return {
         "port": resolved,
         "local": f"http://127.0.0.1:{resolved}/",
-        "lan": f"http://{lan_ip()}:{resolved}/",
+        "lan": f"http://{chosen}:{resolved}/",
+        "alternatives": [
+            {"ip": ip, "url": f"http://{ip}:{resolved}/"}
+            for ip in all_lan_ips()
+            if ip != chosen
+        ],
     }
 
 

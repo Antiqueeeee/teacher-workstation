@@ -379,6 +379,18 @@ def addresses(port: int) -> tuple[str, str]:
     return access_urls(port)
 
 
+def alternative_addresses(port: int) -> list[str]:
+    """其它网卡上可能的地址（装了 VPN / 虚拟机时会有多个，手机打不开就换一个试）。"""
+    if str(BACKEND_DIR) not in sys.path:
+        sys.path.insert(0, str(BACKEND_DIR))
+    try:
+        from app.services.access_info import access_info  # noqa: PLC0415
+
+        return [item["url"] for item in access_info(port).get("alternatives") or []]
+    except Exception:  # noqa: BLE001 - 列不出候选不该挡住启动
+        return []
+
+
 def warn_if_running_from_temp() -> None:
     """在**压缩包临时目录**里直接双击的提醒。
 
@@ -413,6 +425,10 @@ def banner(port: int, version: str = "", daemon: bool = False) -> None:
         print("  用手机相机/微信扫这张（等于打开上面那个地址）：")
         for line in lines:
             print(f"    {line}")
+    others = alternative_addresses(port)
+    if others:
+        print(f"  手机连不上？也可以试：{'、'.join(others)}")
+        print("                    （装了 VPN 或虚拟机时会有多个网卡地址）")
     print(f"  数据目录：        {data_dir()}")
     print(f"  日志：            {data_dir() / 'logs' / 'app.log'}")
     if version:

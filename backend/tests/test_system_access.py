@@ -64,3 +64,47 @@ def test_access_endpoint_returns_the_lan_url_and_a_qr_for_it(client):
     # 与「用 lan 生成的那张」逐字节一致 → 说明编进去的就是 lan
     assert data["qrSvg"] == qr_svg(data["lan"])
     assert data["qrSvg"] != qr_svg(data["local"])
+
+
+def test_all_lan_ips_lists_every_adapter_with_the_probed_one_first(monkeypatch: pytest.MonkeyPatch):
+    """装了 VPN / 虚拟机的电脑会有多个地址，探到的那个排第一，其余作为候选。
+
+    这是评审点到的设计缺口：内核选出的「默认出口」很可能是虚拟网卡，
+    那个地址手机根本连不上，而老师看不出哪儿错了 —— 所以要给得出候选。
+    """
+
+    def fake_getaddrinfo(*_args, **_kwargs):
+        return [
+            (2, 1, 6, "", ("10.0.0.9", 0)),      # 可能是 VPN 的地址
+            (2, 1, 6, "", ("192.168.5.2", 0)),   # 真实局域网
+            (2, 1, 6, "", ("127.0.0.1", 0)),     # 回环要排除
+            (2, 1, 6, "", ("169.254.10.1", 0)),  # 链路本地要排除
+            (2, 1, 6, "", ("192.168.5.2", 0)),   # 重复要去掉
+        ]
+
+    monkeypatch.setattr("app.services.access_info.lan_ip", lambda: "192.168.5.2")
+    monkeypatch.setattr("app.services.access_info.socket.getaddrinfo", fake_getaddrinfo)
+
+    from app.services.access_info import access_info, all_lan_ips
+
+    assert all_lan_ips() == ["192.168.5.2", "10.0.0.9"], "探到的排第一、回环与链路本地要排除、去重"
+    info = access_info(8723)
+    assert info["lan"] == "http://192.168.5.2:8723/"
+    assert info["alternatives"] == [{"ip": "10.0.0.9", "url": "http://10.0.0.9:8723/"}]
+
+
+def test_access_endpoint_accepts_a_local_address_and_rejects_foreign_ones(
+    client, monkeypatch: pytest.MonkeyPatch
+):
+    """`?address=` 只认本机地址 —— 否则这个接口就成了任意二维码生成器。"""
+    monkeypatch.setattr("app.services.access_info.lan_ip", lambda: "192.168.5.2")
+
+    chosen = client.get("/api/v1/system/access", params={"address": "192.168.5.2"})
+    assert chosen.status_code == 200, chosen.text
+    data = chosen.json()["data"]
+    assert data["lan"] == "http://192.168.5.2:8723/"
+    assert data["qrSvg"].startswith("<svg")
+
+    foreign = client.get("/api/v1/system/access", params={"address": "8.8.8.8"})
+    assert foreign.status_code == 400, foreign.text
+    assert "不是这台电脑的地址" in foreign.json()["error"]["message"]

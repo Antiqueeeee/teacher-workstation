@@ -12,18 +12,31 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from app.services.access_info import access_info, qr_svg
+from app.api.errors import INVALID_VALUE, ApiError
+from app.services.access_info import access_info, all_lan_ips, is_local_ip, qr_svg
 
 router = APIRouter(prefix="/system", tags=["系统"])
 
 
 @router.get("/access")
-def get_access(port: int | None = Query(default=None, description="一般不用传，按服务实际端口")):
-    """访问地址（本机 / 局域网）+ 二维码 SVG。
+def get_access(
+    port: int | None = Query(default=None, description="一般不用传，按服务实际端口"),
+    address: str | None = Query(default=None, description="用哪张网卡的地址（界面「换一个地址」用）"),
+):
+    """访问地址（本机 / 局域网 + 其它网卡候选）+ 二维码 SVG。
 
     二维码直接在响应里给 SVG 字符串：界面 `innerHTML` 塞进去就行，
     不必再发一个请求，也不必在前端实现二维码编码。
+
+    `address` 只接受**本机自己**的地址（装了 VPN 的电脑会有多个候选，
+    老师需要换一个试）；传别的地址会报错 —— 否则这就成了一个任意二维码生成器。
     """
-    info = access_info(port)
+    if address and not is_local_ip(address):
+        raise ApiError(
+            INVALID_VALUE,
+            f"「{address}」不是这台电脑的地址（可选：{'、'.join(all_lan_ips())}）",
+            detail={"field": "address", "value": address},
+        )
+    info = access_info(port, address)
     info["qrSvg"] = qr_svg(info["lan"])
     return {"ok": True, "data": info}

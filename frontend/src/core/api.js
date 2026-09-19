@@ -205,7 +205,7 @@ export const api = {
   scheduleWeek: (classId) => request('/schedule/week', { params: { classId } }).then((p) => p.data),
 
   /** 访问地址与二维码（手机扫码打开；地址口径在服务端一处算，见 services/access_info.py）。 */
-  access: () => request('/system/access').then((p) => p.data),
+  access: (address) => request('/system/access', { params: { address } }).then((p) => p.data),
 
   /** 学生一生一档：后端聚合的全部痕迹（各段的数都从所属模块的口径服务取）。 */
   studentArchive: (studentId) => request(`/students/${studentId}/archive`).then((p) => p.data),

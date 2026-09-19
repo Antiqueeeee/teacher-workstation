@@ -64,24 +64,7 @@ export const settingsPage = {
     } catch {
       /* 忽略：设置页的其他部分照常可用 */
     }
-    const accessHtml = access
-      ? `<div class="board">
-        <div class="board-head"><span class="board-title">手机访问</span>
-          <span class="muted">手机扫一下就能打开</span></div>
-        <div class="access-grid">
-          <div>
-            <div class="muted">让手机连**同一个 WiFi**，然后打开这个地址：</div>
-            <div class="access-url">
-              <code data-lan-url>${esc(access.lan)}</code>
-              <button class="btn btn-sm" type="button" data-copy-url>复制地址</button>
-            </div>
-            <div class="muted">这台电脑上打开：<code>${esc(access.local)}</code></div>
-            <div class="muted">第一次运行时 Windows 可能问「是否允许访问网络」，请点允许（否则手机连不上）。</div>
-          </div>
-          <div class="access-qr">${access.qrSvg}</div>
-        </div>
-      </div>`
-      : '';
+    const accessHtml = access ? accessBoardHtml(access) : '';
     const html = `${accessHtml}
       <div class="board">
         <div class="board-head"><span class="board-title">班级信息</span>
@@ -142,6 +125,19 @@ export const settingsPage = {
             try {
               await api.saveClassInfo(payload, store.currentClassId);
               toast('已保存');
+            } catch (error) {
+              toast(error.message, 'err', 7000);
+            }
+            return;
+          }
+
+          if (event.target.matches('[data-lan-pick]')) {
+            // 换一张网卡的地址：重新取一次地址与二维码，只替换这一块
+            try {
+              const info = await api.access(event.target.value);
+              const board = root.querySelector('[data-access-board]');
+              if (board) board.outerHTML = accessBoardHtml(info);
+              toast(`已换成 ${event.target.value}`);
             } catch (error) {
               toast(error.message, 'err', 7000);
             }
@@ -221,4 +217,41 @@ function openClearDialog(data, onDone) {
       });
     },
   });
+}
+
+/**
+ * 「手机访问」区块：地址 + 二维码 + 「换一个地址」。
+ *
+ * 装了 VPN / 虚拟机的电脑会有多个网卡地址，内核替我们选的那个**未必是手机能访问的** ——
+ * 所以把候选都列出来，换一个就重新拿一次地址与二维码（校验在后端，只认本机地址）。
+ */
+function accessBoardHtml(access) {
+  const alternatives = access.alternatives || [];
+  return `<div data-access-board class="board">
+    <div class="board-head"><span class="board-title">手机访问</span>
+      <span class="muted">手机扫一下就能打开</span></div>
+    <div class="access-grid">
+      <div>
+        <div class="muted">让手机连**同一个 WiFi**，然后打开这个地址：</div>
+        <div class="access-url">
+          <code data-lan-url>${esc(access.lan)}</code>
+          <button class="btn btn-sm" type="button" data-copy-url>复制地址</button>
+        </div>
+        <div class="muted">这台电脑上打开：<code>${esc(access.local)}</code></div>
+        ${
+          alternatives.length
+            ? `<div class="muted" style="margin:6px 0 0">装了 VPN / 虚拟机时会有多个网卡地址，
+                 手机打不开就换一个试：
+                 <select class="select" style="width:auto" data-lan-pick>
+                   ${alternatives
+                     .map((item) => `<option value="${esc(item.ip)}">${esc(item.url)}</option>`)
+                     .join('')}
+                 </select></div>`
+            : ''
+        }
+        <div class="muted">第一次运行时 Windows 可能问「是否允许访问网络」，请点允许（否则手机连不上）。</div>
+      </div>
+      <div class="access-qr">${access.qrSvg}</div>
+    </div>
+  </div>`;
 }
