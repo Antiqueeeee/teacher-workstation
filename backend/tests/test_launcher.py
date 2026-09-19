@@ -72,3 +72,29 @@ def test_terminal_qr_is_optional(monkeypatch: pytest.MonkeyPatch):
     )
 
     assert launcher.qr_lines("http://192.168.5.2:8723/") == []
+
+
+def test_daemon_timeout_says_still_starting_when_the_child_is_alive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """**第一次启动很慢**（建库 + 跑全部迁移），别因此对老师报「启动失败」。
+
+    老师第一次装必然碰上这一条：进程还在、只是还没监听端口 ——
+    这时候说「失败」会让他以为要重装。
+    """
+    import json
+
+    monkeypatch.setenv("TWS_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(launcher, "DAEMON_WAIT_SECONDS", 0.3)
+    monkeypatch.setattr(launcher, "health", lambda _port, timeout=1.0: None)
+
+    def fake_spawn(port: int) -> None:
+        # 模拟「子进程活着、状态文件已写、但还没开始监听」
+        (tmp_path / launcher.PID_FILE_NAME).write_text(
+            json.dumps({"pid": 123456, "port": port}), encoding="utf-8"
+        )
+
+    monkeypatch.setattr(launcher, "spawn_daemon", fake_spawn)
+    assert launcher.cmd_start(daemon=True, want_browser=False, base_port=8790) == 0
+    output = capsys.readouterr().out
+    assert "已经在启动了" in output and "失败" not in output

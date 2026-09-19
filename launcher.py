@@ -43,7 +43,7 @@ BACKEND_DIR = APP_DIR / "backend"
 DEFAULT_PORT = 8723
 PORT_TRIES = 20  # 端口被占就往后找，最多试这么多个
 PID_FILE_NAME = "server.json"
-DAEMON_WAIT_SECONDS = 3.0  # 后台启动后等它起来，起不来要如实说
+DAEMON_WAIT_SECONDS = 15.0  # 后台启动后等它起来（首次要建库跑迁移，给足时间）
 
 
 # --------------------------------------------------------------------- 小工具
@@ -212,10 +212,22 @@ def install_autostart() -> int:
     if sys.platform == "darwin":
         target = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
         target.parent.mkdir(parents=True, exist_ok=True)
+        # launchd 会在**启动这个任务之前**就去打开 StandardOutPath/ErrorPath；
+        # 目录不存在时登录自启会静默失败（老师那边表现就是「说设好了，其实没起来」）
+        (data_dir() / "logs").mkdir(parents=True, exist_ok=True)
         target.write_text(launch_agent_plist(), encoding="utf-8")
-        os.system(f'launchctl unload "{target}" >/dev/null 2>&1; launchctl load "{target}"')
-        print(f"已设置开机自启（{target}）。")
+        # 新版 macOS 建议用 bootstrap/bootout（load/unload 已过时但仍可用）——
+        # 两条路都试，成一条就行；都不成才提示老师
+        loaded = os.system(f'launchctl unload "{target}" >/dev/null 2>&1')  # 旧的先撤掉
+        enabled = os.system(f'launchctl bootstrap gui/{os.getuid()} "{target}" >/dev/null 2>&1')
+        if enabled != 0:
+            enabled = os.system(f'launchctl load "{target}" >/dev/null 2>&1')
+        if enabled != 0:
+            print("已经把自启配置写好了，但让 launchd 立刻加载它没成功 —— 重新登录一次 macOS 就会生效。")
+        else:
+            print(f"已设置开机自启（{target}）。")
         print("登录 macOS 后它会自动在后台跑起来，没有窗口。")
+        print(f"（日志在 {data_dir() / 'logs'}；要取消就再点一次「取消开机自启」）")
         return 0
     print("这个系统上没做开机自启（只支持 Windows 与 macOS）。")
     return 1
@@ -244,7 +256,9 @@ def remove_autostart() -> int:
         if not target.exists():
             print("本来就没设置开机自启。")
             return 0
-        os.system(f'launchctl unload "{target}" >/dev/null 2>&1')
+        # 与安装对称：bootout 优先，退回 unload（新版 macOS 建议前者）
+        if os.system(f'launchctl bootout gui/{os.getuid()} "{target}" >/dev/null 2>&1') != 0:
+            os.system(f'launchctl unload "{target}" >/dev/null 2>&1')
         target.unlink(missing_ok=True)
         print("已取消开机自启。")
         return 0
@@ -414,15 +428,25 @@ def cmd_start(daemon: bool, want_browser: bool, base_port: int) -> int:
     if not daemon:
         return serve(port, daemon=False, detached=False)
 
-    # 后台：起一个脱离终端的自己，然后等它真的起来（起不来要如实说，别假报成功）
+    # 后台：起一个脱离终端的自己，然后等它真的起来
     spawn_daemon(port)
-    for _ in range(int(DAEMON_WAIT_SECONDS / 0.25)):
+    deadline = time.time() + DAEMON_WAIT_SECONDS
+    while time.time() < deadline:
         if health(port) is not None:
             banner(port, "", daemon=True)
             if want_browser:
                 open_browser(f"http://127.0.0.1:{port}/")
             return 0
         time.sleep(0.25)
+
+    # 等超了不代表失败：**第一次启动要建数据库、跑全部迁移**，慢一些很正常
+    # （老师第一次装必然碰上）。进程还在就如实说「还在启动」，别报「失败」吓人。
+    state = read_state()
+    if state and int(state.get("port") or 0) == port:
+        print("已经在启动了 —— 第一次运行要建数据库、跑迁移，比平时慢一点，请稍等半分钟。")
+        banner(port, "", daemon=True)
+        return 0
+
     print("后台启动似乎没成功 —— 请把这两份日志发给技术同事：")
     print(f"  {data_dir() / 'logs' / 'server.out.log'}")
     print(f"  {data_dir() / 'logs' / 'app.log'}")
