@@ -39,3 +39,4 @@ node_modules/
 *.swp
 Thumbs.db
 Desktop.ini
+runtime/

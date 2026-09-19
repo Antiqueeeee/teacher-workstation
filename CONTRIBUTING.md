@@ -148,15 +148,51 @@ cd backend
 PYTHONPATH=. ../.validation/conda/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8723 --reload
 # → http://<本机内网IP>:8723/
 
-# 3. 跑测试
-PYTHONPATH=. ../.validation/conda/python.exe -m pytest -q
+# 或者用一键启动器（与老师走的那条路完全一致）
+cd ..
+../.validation/conda/python.exe launcher.py           # 前台
+../.validation/conda/python.exe launcher.py --daemon  # 后台
+../.validation/conda/python.exe launcher.py --stop    # 停止
 
-# 4. 提交前检查行数
+# 3. 跑测试
+cd backend && PYTHONPATH=. ../.validation/conda/python.exe -m pytest -q
+
+# 4. 提交前检查
 python tools/check_file_size.py
+python tools/check_frontend.py
+python tools/check_launch_scripts.py
 ```
 
 - 首次启动会自动建目录、跑数据库迁移，并创建一个**空的**默认班级（不是演示数据）。
-- 数据目录默认 `backend/data/`（已 gitignore）。
+- 数据目录默认是**包根目录的 `data/`**（已 gitignore；第六阶段从 `backend/data/` 改过来的），
+  可用 `TWS_DATA_DIR` 覆盖。
 - 前端无构建步骤，由后端静态托管，不用单独起服务。
 - 数据库结构变更：先改模型并在 `app/models/__init__.py` 里导出，然后
   `cd backend && alembic revision --autogenerate -m "..."`，**检查生成的脚本**再 `alembic upgrade head`。
+
+---
+
+## 10. 交付包与启动脚本
+
+老师拿到的是**一个目录**：自带 Python 运行时（`runtime/`，gitignore 掉，交付时构建进去）、
+程序代码、双击脚本、以及 `data/`（第一次启动时自动建）。
+
+- **所有启动逻辑在 `launcher.py`**（跨平台，可单测）：找空闲端口、建数据目录、显示地址、
+  开浏览器、已在跑时不重复启动、`--daemon` / `--stop` / `--status` / `--install-autostart`。
+  那一堆 `启动.bat` / `启动.command` 只是**薄壳**，不要在脚本里写逻辑；
+- **`.bat` 有两条硬规矩**（都踩过）：必须是 **CRLF**（LF 会被 cmd 拼成乱命令）、
+  **只允许 ASCII**（中文注释会被按代码页切碎当命令执行）。中文提示一律交给 Python 打印；
+- `.command` / `.sh`：**LF + shebang + 可执行位**（macOS 双击靠它）；交付打包时要保住可执行位；
+- `python tools/check_launch_scripts.py` 守这几条 —— 改脚本后跑一下，别等老师双击了才发现；
+- **验证方式**：在包根目录把 `.bat` 复制成 ASCII 名（如 `_t_start.bat`）再用 `cmd /c` 跑一遍
+  （Git Bash 里直接传中文文件名给 cmd 会有编码错配，那是测试环境的假象）。
+
+### 10.1 开发机上怎么假装成交付包
+
+交付包里 `runtime/` 是自带的 Python。开发机上不必真造一份，用一个目录链接代替就行：
+
+```bash
+cmd //c "mklink /J runtime D:\CodeSpace\teacher-workstation\.validation\conda"
+```
+
+然后双击（或用 `cmd /c`）根目录的 `启动.bat` 就是老师的体验 —— 数据会落在 `<包根>/data/`。

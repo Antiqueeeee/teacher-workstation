@@ -8,3 +8,6 @@
 - **不得引入任何运行期外网依赖**（客户要求部署环境离线）。
 - **不实现**：账号 / 口令 / 权限、备份功能、导出为独立 HTML、桌面外壳。
 - 前端是原生 ES Modules，**无构建步骤**；手机端是一等公民。
+- **交付形态**：自带 Python 运行时的目录 + 双击脚本（`启动.bat` / `启动.command`），
+  全部启动逻辑在 `launcher.py`；老师的数据在**包根 `data/`**。改启动脚本后跑
+  `python tools/check_launch_scripts.py`（`.bat` 必须 ASCII + CRLF，这条踩过）。

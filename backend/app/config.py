@@ -1,7 +1,7 @@
 """应用配置：数据目录、数据库地址、监听地址与全局常量。
 
 约定（见 CONTRIBUTING.md）：
-- 数据目录默认在 `backend/data/`，可用环境变量 `TWS_DATA_DIR` 覆盖；
+- 数据目录默认在**包根目录的 `data/`**（不是 backend 里），可用 `TWS_DATA_DIR` 覆盖；
 - 服务监听内网地址，手机与电脑都通过它访问（部署环境不联网，不得引入任何外网依赖）。
 """
 
@@ -18,7 +18,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # 仓库根目录
 REPO_DIR = BASE_DIR.parent
 
-DATA_DIR = Path(os.environ.get("TWS_DATA_DIR", BASE_DIR / "data")).resolve()
+# 数据目录默认在**包根目录**的 `data/`（数据库、照片录音、日志都在里面）：
+# 老师一眼能看懂「数据在这儿」，整包拷走就是备份；`TWS_DATA_DIR` 可以覆盖它。
+DATA_DIR = Path(os.environ.get("TWS_DATA_DIR", REPO_DIR / "data")).resolve()
 MEDIA_DIR = DATA_DIR / "media"
 LOG_DIR = DATA_DIR / "logs"
 DB_PATH = DATA_DIR / "workbench.sqlite"
