@@ -3,20 +3,33 @@
 # 这个文件是给别的脚本引用的，老师不需要点它。
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY="$REPO_DIR/runtime/bin/python3"
-if [ -x "$PY" ]; then
-  return 0 2>/dev/null || exit 0
-fi
-
 BOOT="$REPO_DIR/tools/bootstrap.py"
+
 if [ ! -f "$BOOT" ]; then
   echo "缺少 tools/bootstrap.py —— 请重新克隆/解压一份完整的项目。"
   read -r -p "按回车关闭…" _
   return 1 2>/dev/null || exit 1
 fi
 
-# 第一次运行：用系统 python3 把自带运行时下下来、把依赖装进去。
-# 系统 python3 只用来**下载与安装**；服务本身永远跑在自带运行时上。
-BOOTSTRAP_PY="$(command -v python3 || true)"
+# 运行时在不在？在的话还要看**依赖齐不齐**：只判断文件存在是不够的 ——
+# 装到一半被打断（断网、关窗口）会留下一个「啥也 import 不了」的运行时，
+# 服务起来就是一句 ModuleNotFoundError。--check 是离线的一秒级自检。
+BOOTSTRAP_PY=""
+if [ -x "$PY" ]; then
+  if "$PY" "$BOOT" --check >/dev/null 2>&1; then
+    return 0 2>/dev/null || exit 0
+  fi
+  echo
+  echo "自带的运行时在，但依赖不齐 —— 正在补装。"
+fi
+
+# 用谁来跑自举：系统 python3（够新的话），否则用自带运行时自己（它只需要标准库）
+if [ -n "$(command -v python3 || true)" ]; then
+  BOOTSTRAP_PY="$(command -v python3)"
+elif [ -x "$PY" ]; then
+  BOOTSTRAP_PY="$PY"
+fi
+
 if [ -z "$BOOTSTRAP_PY" ]; then
   echo
   echo "这个项目需要一份 Python 运行时，而这台电脑上还没有。两种办法："
@@ -31,7 +44,7 @@ if [ -z "$BOOTSTRAP_PY" ]; then
 fi
 
 echo
-echo "第一次运行：正在把自带的 Python 运行时装到 runtime/ ……"
+echo "正在把自带的 Python 运行时装到 runtime/ ……"
 echo "（不会往你自己的 Python 环境里装任何东西）"
 echo
 if ! "$BOOTSTRAP_PY" "$BOOT"; then
