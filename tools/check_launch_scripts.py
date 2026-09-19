@@ -97,6 +97,15 @@ def main() -> int:
             if f'"{flag}"' not in text:
                 problems.append(f"launcher.py 里没有 {flag}（启动脚本会用到它）")
 
+    # 自带的运行时是**唯一**允许用的 Python：找不到它时必须明确报错，
+    # 不许悄悄退回系统 Python（那等于依赖老师自己的环境，用户明确要求过不要）
+    for name in HELPERS:
+        path = REPO / name
+        if path.exists() and "TWS_ALLOW_SYSTEM_PYTHON" not in path.read_text(
+            encoding="utf-8", errors="replace"
+        ):
+            problems.append(f"{name}：没有 TWS_ALLOW_SYSTEM_PYTHON 开关 —— 会悄悄用系统 Python")
+
     # 那几个脚本要真的能互相找到：.bat 里引用的 helper 必须存在
     for name in BAT_SCRIPTS:
         path = REPO / name

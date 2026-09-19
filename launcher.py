@@ -449,16 +449,41 @@ def banner(port: int, version: str = "", daemon: bool = False) -> None:
 # --------------------------------------------------------------------- 命令
 
 
-def cmd_status() -> int:
+def status_payload() -> dict:
+    """状态的**机器可读**版本（给外部工具用：一键启动器、进程管理器、AI 助手…）。
+
+    外部工具不该去解析中文输出 —— 那是给老师看的。约定：
+    `{"ok": true, "running": false}` 表示「没在跑但一切正常」，
+    进程退出码 0 = 在跑、1 = 没在跑。
+    """
     state = running()
     if state is None:
+        return {"ok": True, "running": False}
+    local, lan = addresses(int(state["port"]))
+    return {
+        "ok": True,
+        "running": True,
+        "pid": state.get("pid"),
+        "port": int(state["port"]),
+        "local": local,
+        "lan": lan,
+        "dataDir": state.get("dataDir"),
+        "startedAt": state.get("startedAt"),
+    }
+
+
+def cmd_status(as_json: bool = False) -> int:
+    payload = status_payload()
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0 if payload.get("running") else 1
+    if not payload.get("running"):
         print("没有在运行。")
         return 1
-    local, lan = addresses(int(state["port"]))
-    print(f"正在运行：端口 {state['port']}（{state.get('startedAt', '')} 启动）")
-    print(f"  这台电脑：{local}")
-    print(f"  手机/平板：{lan}")
-    print(f"  数据目录：{state.get('dataDir')}")
+    print(f"正在运行：端口 {payload['port']}（{payload.get('startedAt', '')} 启动）")
+    print(f"  这台电脑：{payload['local']}")
+    print(f"  手机/平板：{payload['lan']}")
+    print(f"  数据目录：{payload.get('dataDir')}")
     return 0
 
 
@@ -640,6 +665,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--daemon", action="store_true", help="后台运行（无窗口），日志写进数据目录")
     parser.add_argument("--stop", action="store_true", help="停止正在运行的实例")
     parser.add_argument("--status", action="store_true", help="看它在不在跑")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="配合 --status 用：输出机器可读的 JSON（外部工具调用时用，退出码 0=在跑、1=没在跑）",
+    )
     parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     parser.add_argument(
         "--port", type=int, default=None, help=f"指定端口（默认 {DEFAULT_PORT} 起，被占就往后找）"
@@ -656,7 +686,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.stop:
         return cmd_stop()
     if args.status:
-        return cmd_status()
+        return cmd_status(as_json=args.json)
     if args.detached:
         return serve(args.port or DEFAULT_PORT, daemon=True, detached=True)
     return cmd_start(args.daemon, not args.no_browser, args.port or base_port())

@@ -221,6 +221,42 @@ python tools/build_bundle.py --platform macos-arm64     # 或 macos-x64
 构建完它会**自己验一遍**：用交付包里的运行时导入全部依赖，再真起一次服务、查一次状态、停掉。
 产物在 `dist/班主任工作台-<平台>-<版本>.zip`（约 48 MB）。
 
+### 10.3 被别的工具启动时的约定（一键启动器 / 进程管理器 / AI 助手）
+
+老师完全可能用别的工具（快捷启动器、定时任务、WorkBuddy 这类 AI 助手）把服务拉起来，
+所以 `launcher.py` 的对外接口要**稳定、可依赖**，文档里也要写清楚：
+
+| 用途 | 命令 | 约定 |
+|---|---|---|
+| 后台启动 | `runtime/python.exe launcher.py --daemon` | **幂等**：已经在跑时直接返回 0，不会起第二个实例；退出码 0=成功、1=失败 |
+| 前台启动 | `runtime/python.exe launcher.py` | 关掉窗口即停（适合第一次试） |
+| 状态 | `... --status --json` | 输出一行 JSON：`{ok, running, pid, port, local, lan, dataDir, startedAt}`；退出码 0=在跑、1=没在跑 |
+| 停止 | `... --stop` | 退出码 0=已停（或本来就没在跑） |
+| 开机自启 | `... --install-autostart` / `--remove-autostart` | Windows 写 `HKCU\...\Run`、macOS 写 LaunchAgent；都不需要管理员 |
+
+- **不要解析中文输出**（那是给老师看的，措辞会变）；外部工具只用 `--json` 与退出码。
+- **环境变量**：`TWS_PORT`（起始端口，被占会往后找）、`TWS_DATA_DIR`（数据目录）、`TWS_HOST`（监听地址）。
+- **自检**：`http://127.0.0.1:<port>/api/v1/health` 返回 `{"ok":true,...}` 才算真起来；
+  `--status --json` 也要求「进程活着 **且** 端口上确实是我们的服务」才算 running。
+- **状态文件**：`<data>/server.json`（pid/port）与 `<data>/server.lock`（启动锁）。
+  外部工具**不要**靠删这两个文件来「停服务」（那只清记录、不停进程），请用 `--stop`。
+- **AI 助手（WorkBuddy 这类桌面 Agent）替老师跑命令是最可能的用法**，因此：
+  (a) 命令要能一句话说清（上面那四条就是全部）；
+  (b) **别让它装 Python / 装依赖** —— 包自带运行时，装东西只会污染老师的系统；
+  (c) **别把开机自启托付给它**（它不是服务管理器），自启只有 `--install-autostart` 一条可靠路径；
+  (d) 允许它**把命令丢在自己的会话里**（老师关掉助手就可能连服务一起停）——
+      所以文档要求「以 `--status --json` 或浏览器能否打开为准，不能只听一句『已启动』」。
+
+### 10.4 Python 环境：老师那边不碰他自己装的
+
+- 交付包**自带一份 Python**（`runtime/`，python-build-standalone 的可搬移发行版），
+  运行期只用它：不写 PATH、不装任何包、不碰系统 Python 与全局 site-packages；
+- **脚本不许悄悄退回系统 Python**：`_python.bat` / `_python.sh` 在找不到 `runtime/` 时会
+  明确报错并要求重新解压完整包（开发机要用系统 Python 得显式设 `TWS_ALLOW_SYSTEM_PYTHON=1`）。
+  理由：退回去用老师的 Python 等于依赖他的环境，而他的环境里没有我们的依赖、版本也可能不对；
+- 唯一的「包外写入」是老师**主动**点「设置开机自启」时写的注册表项 / LaunchAgent，以及
+  浏览器打开页面 —— 其余读写都在包内（`data/`，可用 `TWS_DATA_DIR` 指到别处）。
+
 **为什么 macOS 包必须在 macOS 上构建**：macOS 运行时压缩包里含符号链接
 （`bin/python3 → python3.11`），在 Windows 上解压会变成普通文件，到 Mac 上就坏了。
 构建脚本会直接拒绝（`TWS_BUILD_CROSS=1` 可强行跳过，但未验证）。

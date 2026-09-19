@@ -190,3 +190,41 @@ def test_running_from_a_zip_warns_about_the_temp_directory(
     monkeypatch.setattr(launcher, "APP_DIR", Path(r"D:\班主任工作台"))
     launcher.warn_if_running_from_temp()
     assert capsys.readouterr().out == ""
+
+
+def test_status_json_is_machine_readable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys):
+    """外部工具（一键启动器 / 进程管理器 / AI 助手）只用 `--json` 与退出码。
+
+    约定：没在跑时也是 `ok: true`（**接口是好的，只是没在跑**），退出码 1；
+    在跑时给全 pid / port / 两个地址 / 数据目录，退出码 0。
+    """
+    import json
+
+    monkeypatch.setenv("TWS_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(launcher, "running", lambda: None)
+    assert launcher.cmd_status(as_json=True) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"ok": True, "running": False}
+
+    monkeypatch.setattr(
+        launcher,
+        "running",
+        lambda: {"pid": 4321, "port": 8723, "startedAt": "2026-09-19 10:00:00", "dataDir": str(tmp_path)},
+    )
+    assert launcher.cmd_status(as_json=True) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["running"] is True and payload["pid"] == 4321 and payload["port"] == 8723
+    assert payload["local"].startswith("http://127.0.0.1:8723") and payload["lan"].startswith("http://")
+    assert payload["dataDir"] == str(tmp_path)
+
+
+def test_daemon_start_is_idempotent_for_external_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """`--daemon` 幂等：已经在跑时返回 0，绝不起第二个实例（外部工具会反复调用它）。"""
+    monkeypatch.setenv("TWS_DATA_DIR", str(tmp_path))
+    spawned: list[int] = []
+    monkeypatch.setattr(launcher, "spawn_daemon", lambda port: spawned.append(port))
+    monkeypatch.setattr(
+        launcher, "running", lambda: {"pid": 1, "port": 8723, "dataDir": str(tmp_path)}
+    )
+    assert launcher.cmd_start(daemon=True, want_browser=False, base_port=8723) == 0
+    assert spawned == [], "已经在跑时不该再派生新实例"
