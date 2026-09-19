@@ -387,13 +387,16 @@ def verify(package: Path, platform_key: str) -> None:
         errors="replace",
     )
     log("  " + status.stdout.strip().replace("\n", "\n  "))
-    # 顺手把新功能也验一下：访问地址 / 二维码在**交付包里**要真的能用
+    # 顺手把新功能也验一下：访问地址 / 二维码在**交付包里**要真的能用，
+    # 而且地址里的端口必须是**它实际监听的端口**（8723 被占用时会改用别的端口，
+    # 二维码指错端口的话老师扫了就是打不开 —— 这个 bug 真出现过）
     probe = (
         "import json, urllib.request, pathlib;"
         f"state = json.loads(pathlib.Path(r'{package / 'data' / 'server.json'}').read_text(encoding='utf-8'));"
         "port = state['port'];"
         "data = json.loads(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/v1/system/access').read())['data'];"
         "assert data['lan'].startswith('http://') and data['qrSvg'].startswith('<svg');"
+        "assert f':{port}/' in data['lan'], f'二维码/地址里的端口 {data[\"lan\"]} 与实际端口 {port} 不一致';"
         "print('访问地址与二维码 OK：' + data['lan'])"
     )
     subprocess.run([str(python), "-c", probe], check=True, cwd=package, env=env)

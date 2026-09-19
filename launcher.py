@@ -372,6 +372,10 @@ def serve(port: int, daemon: bool, detached: bool) -> int:
         redirect_output()
     data_dir().mkdir(parents=True, exist_ok=True)
     os.environ["TWS_DATA_DIR"] = str(data_dir())
+    # **把实际用的端口告诉应用**：界面的「手机访问」与二维码里的地址是按
+    # `app.config.PORT` 拼的。8723 被占用时启动器会改用 8724，不把这件事告诉应用，
+    # 二维码就会指向一个没人监听的端口 —— 老师扫了打不开，而且看不出哪儿错了。
+    os.environ["TWS_PORT"] = str(port)
     sys.path.insert(0, str(BACKEND_DIR))
 
     from app.config import APP_VERSION  # noqa: PLC0415 - 必须在设好环境变量之后导入
