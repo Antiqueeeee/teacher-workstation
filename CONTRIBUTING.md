@@ -224,3 +224,22 @@ python tools/build_bundle.py --platform macos-arm64     # 或 macos-x64
 **为什么 macOS 包必须在 macOS 上构建**：macOS 运行时压缩包里含符号链接
 （`bin/python3 → python3.11`），在 Windows 上解压会变成普通文件，到 Mac 上就坏了。
 构建脚本会直接拒绝（`TWS_BUILD_CROSS=1` 可强行跳过，但未验证）。
+
+---
+
+## 11. 远端与推送
+
+代码同时放在两个地方，**一次 push 推两边**：
+
+```bash
+git push origin main        # origin 配了两个 push 地址，这一条命令推到 GitHub 与 Gitee
+```
+
+- `origin` 的 fetch 地址是 GitHub，push 地址有两个（GitHub + Gitee）：
+  `git remote -v` 能看到三行（一行 fetch、两行 push）。
+- 拉取只从 GitHub 拉；Gitee 只作为镜像（备一份，也方便国内网络访问）。
+- 新加远端地址用 `git remote set-url --add --push origin <url>`，**不要**用
+  `git remote add`（那会又多一个远端，`git push` 就不会一次推两边了）。
+- 两个仓库都是**公开**的 —— 往仓库里加东西前先想一下「这个能公开吗」：
+  原始素材（`raw-material/meetings`、`discussion`）、老师的数据（`data/`）都已 gitignore，
+  别用 `git add -f` 把它们塞进去。
