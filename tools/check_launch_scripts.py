@@ -40,10 +40,23 @@ def check_bat(path: Path, problems: list[str]) -> None:
     if re.search(rb"(?<!\r)\n", data):
         problems.append(f"{path.name}：混着裸 LF 行尾，请统一成 CRLF")
     try:
-        data.decode("ascii")
+        text = data.decode("ascii")
     except UnicodeDecodeError as exc:
         line = data[: exc.start].count(b"\n") + 1
         problems.append(f"{path.name}:{line}：含非 ASCII 字符（中文注释会让 cmd 报「不是内部或外部命令」）")
+        return
+
+    # **变量引用漏掉收尾的 `%`**：`if not exist "%BOOT" (` 少了那个 `%`，变量就展开成空串，
+    # 于是永远走「文件缺失」那一支 —— 双击的人看到「请重新解压完整包」，而文件好端端在那儿。
+    # cmd 一个语法错误都不报，所以只能靠这条断言守住（真踩过）。
+    # 只认这一种形状：引号里 `%名字` 后面直接跟引号（`"%PY%"` 这种正确写法不会命中）。
+    broken_ref = re.compile(r'"%[A-Za-z_][A-Za-z0-9_]*"')
+    for number, line in enumerate(text.splitlines(), start=1):
+        if broken_ref.search(line):
+            problems.append(
+                f"{path.name}:{number}：{line.strip()[:60]} —— 变量引用少了一个 %，"
+                "cmd 不报错但会展开成空串、分支悄悄走错"
+            )
 
 
 def check_sh(path: Path, problems: list[str]) -> None:

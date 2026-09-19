@@ -10,7 +10,7 @@ rem First run: bootstrap the runtime using whatever system Python we can find.
 rem The system Python is only used to DOWNLOAD and INSTALL into runtime\ ;
 rem the service itself always runs on the bundled runtime.
 set "BOOT=%~dp0tools\bootstrap.py"
-if not exist "%BOOT" (
+if not exist "%BOOT%" (
   echo tools\bootstrap.py is missing - please unpack a complete copy.
   pause
   exit /b 1
