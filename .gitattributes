@@ -21,3 +21,10 @@
 *.toml text
 *.json text
 *.yml  text
+
+# 启动脚本的行尾是**硬要求**（见 CONTRIBUTING §10），不能跟着全局的 eol=lf 走：
+#   .bat 必须 CRLF —— 只有 LF 的 .bat 会被 cmd 拼成乱命令（实测「不是内部或外部命令」）；
+#   .command / .sh 必须 LF —— 否则 macOS 的 bash 可能拒绝执行。
+*.bat     text eol=crlf
+*.command text eol=lf
+*.sh      text eol=lf

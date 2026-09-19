@@ -186,6 +186,10 @@ python tools/check_launch_scripts.py
 - `python tools/check_launch_scripts.py` 守这几条 —— 改脚本后跑一下，别等老师双击了才发现；
 - **验证方式**：在包根目录把 `.bat` 复制成 ASCII 名（如 `_t_start.bat`）再用 `cmd /c` 跑一遍
   （Git Bash 里直接传中文文件名给 cmd 会有编码错配，那是测试环境的假象）。
+- **仓库存的行尾 vs 交付包的行尾**：git 仓库里统一存 LF，只在 checkout 时按 `eol=` 转换；
+  所以 `.gitattributes` 里必须留 `*.bat text eol=crlf`、`*.command text eol=lf`（`check_launch_scripts.py` 守着）。
+  **从仓库直接打 zip 时连 checkout 都没有** —— 交付包的构建脚本必须自己把 `.bat` 转成 CRLF、
+  给 `.command` 加上可执行位（0o755），否则老师那边双击就是坏的。
 
 ### 10.1 开发机上怎么假装成交付包
 

@@ -90,6 +90,8 @@ def main() -> int:
         if path.exists() and "_python.bat" not in path.read_text(encoding="utf-8", errors="ignore"):
             problems.append(f"{name}：没有调用 _python.bat 找运行时")
 
+    check_gitattributes(problems)
+
     if problems:
         print(f"X 启动脚本检查发现 {len(problems)} 个问题：")
         for item in problems:
@@ -97,9 +99,38 @@ def main() -> int:
         return 1
     print(
         f"OK 启动脚本检查通过：{len(BAT_SCRIPTS)} 个 .bat（ASCII + CRLF）、"
-        f"{len(SH_SCRIPTS)} 个 .command（LF + shebang）、launcher.py 的开关齐全"
+        f"{len(SH_SCRIPTS)} 个 .command（LF + shebang）、launcher.py 的开关齐全、行尾规则已声明"
     )
     return 0
+
+
+def check_gitattributes(problems: list[str]) -> None:
+    """`.gitattributes` 里必须声明这几个脚本的行尾规则。
+
+    为什么这也算「启动脚本检查」：git 仓库里统一存 LF，**只在 checkout 时**按
+    `eol=` 转成工作区的行尾。没有 `*.bat text eol=crlf` 这条，克隆出来的 .bat 就是 LF，
+    双击直接报「不是内部或外部命令」；而**从仓库直接打 zip**（交付包的常见做法）
+    连 checkout 都没有，构建脚本得自己把 .bat 转成 CRLF、给 .command 加可执行位。
+    """
+    path = REPO / ".gitattributes"
+    if not path.exists():
+        problems.append("缺少 .gitattributes（行尾规则没了，交付出去的脚本可能是坏的）")
+        return
+    rules: dict[str, list[str]] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            rules[parts[0]] = parts[1:]
+
+    for pattern, need in (("*.bat", "eol=crlf"), ("*.command", "eol=lf"), ("*.sh", "eol=lf")):
+        if need not in rules.get(pattern, []):
+            problems.append(
+                f".gitattributes 里缺少 `{pattern} text {need}` —— 克隆/打包出来的行尾会跟"
+                f"{pattern} 的硬要求打架"
+            )
 
 
 if __name__ == "__main__":
