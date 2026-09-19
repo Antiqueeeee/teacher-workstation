@@ -11,3 +11,5 @@ openpyxl>=3.1
 pillow>=10.0
 mutagen>=1.47
 python-multipart>=0.0.9
+# 二维码（纯 Python、无依赖、MIT）：界面上的「手机访问」与启动窗口用
+segno>=1.6

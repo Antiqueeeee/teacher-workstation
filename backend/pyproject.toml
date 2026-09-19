@@ -13,6 +13,7 @@ dependencies = [
     "pillow>=10.0",
     "mutagen>=1.47",
     "python-multipart>=0.0.9",
+    "segno>=1.6",
 ]
 
 [project.optional-dependencies]

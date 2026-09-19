@@ -349,18 +349,23 @@ def verify(package: Path, platform_key: str) -> None:
     python = package / "runtime" / platform["runtime_python"]
     if not python.exists():
         raise SystemExit(f"交付包里没有运行时：{python}")
+    # **导入整个应用**，而不是手写一份依赖清单：手写的那份必然漏（新加依赖就漏一个），
+    # 而漏掉的表现是「交付包在老师的电脑上启动即报错」。app.main 会把依赖全拉起来。
+    env = {**os.environ, "TWS_DATA_DIR": str(package / "data"), "PYTHONPATH": str(package / "backend")}
     imports = (
-        "import fastapi, uvicorn, sqlalchemy, alembic, pydantic, openpyxl, PIL, mutagen, multipart;"
-        "print('依赖导入 OK')"
+        "import app.main;"
+        "from app.services.access_info import qr_svg;"
+        "assert qr_svg('http://127.0.0.1:8723/').startswith('<svg');"
+        "print('应用与依赖导入 OK（含二维码依赖）')"
     )
-    subprocess.run([str(python), "-c", imports], check=True, cwd=package)
+    subprocess.run([str(python), "-c", imports], check=True, cwd=package, env=env)
 
     if sys.platform != platform["host"]:
         log("（跨平台构建，跳过「真起一次服务」那步）")
         return
 
-    log("  起一次服务、请求 /health …")
-    env = {**os.environ, "TWS_DATA_DIR": str(package / "data")}
+    log("  起一次服务、请求 /health 与 /system/access …")
+    env = {**os.environ, "TWS_DATA_DIR": str(package / "data"), "PYTHONPATH": str(package / "backend")}
     process = subprocess.Popen(
         [str(python), str(package / "launcher.py"), "--daemon", "--no-browser"],
         cwd=package,
@@ -382,6 +387,16 @@ def verify(package: Path, platform_key: str) -> None:
         errors="replace",
     )
     log("  " + status.stdout.strip().replace("\n", "\n  "))
+    # 顺手把新功能也验一下：访问地址 / 二维码在**交付包里**要真的能用
+    probe = (
+        "import json, urllib.request, pathlib;"
+        f"state = json.loads(pathlib.Path(r'{package / 'data' / 'server.json'}').read_text(encoding='utf-8'));"
+        "port = state['port'];"
+        "data = json.loads(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/v1/system/access').read())['data'];"
+        "assert data['lan'].startswith('http://') and data['qrSvg'].startswith('<svg');"
+        "print('访问地址与二维码 OK：' + data['lan'])"
+    )
+    subprocess.run([str(python), "-c", probe], check=True, cwd=package, env=env)
     subprocess.run([str(python), str(package / "launcher.py"), "--stop"], cwd=package, env=env, check=False)
     if status.returncode != 0:
         raise SystemExit("交付包起来了但状态查询失败 —— 别急着交付，先看上面的输出")

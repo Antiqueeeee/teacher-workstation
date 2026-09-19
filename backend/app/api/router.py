@@ -27,6 +27,7 @@ from app.api.v1.media import router as media_router
 from app.api.v1.schedule import router as schedule_router
 from app.api.v1.seats import router as seats_router
 from app.api.v1.settings import router as settings_router
+from app.api.v1.system import router as system_router
 from app.api.v1.export import router as export_router
 from app.api.v1.student_fields import router as student_fields_router
 from app.api.v1.student_reports import router as student_reports_router
@@ -81,6 +82,8 @@ router.include_router(schedule_router)
 router.include_router(analytics_router)
 # /settings 是独立前缀
 router.include_router(settings_router)
+# /system/access 是独立前缀（访问地址与二维码）
+router.include_router(system_router)
 # /fees/overview、/fees/categories/{id} 是独立前缀
 router.include_router(fees_router)
 # /courses/overview 必须先于 /courses/{row_id}（同一个字面路径规矩）

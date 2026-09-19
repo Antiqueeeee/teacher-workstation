@@ -57,7 +57,32 @@ export const settingsPage = {
 
     const storage = data.storage;
     const rows = data.tableCounts.filter((item) => item.rows > 0);
-    const html = `
+    // 访问地址与二维码：拿不到也不该让整页打不开（下面按有没有渲染这一块）
+    let access = null;
+    try {
+      access = await api.access();
+    } catch {
+      /* 忽略：设置页的其他部分照常可用 */
+    }
+    const accessHtml = access
+      ? `<div class="board">
+        <div class="board-head"><span class="board-title">手机访问</span>
+          <span class="muted">手机扫一下就能打开</span></div>
+        <div class="access-grid">
+          <div>
+            <div class="muted">让手机连**同一个 WiFi**，然后打开这个地址：</div>
+            <div class="access-url">
+              <code data-lan-url>${esc(access.lan)}</code>
+              <button class="btn btn-sm" type="button" data-copy-url>复制地址</button>
+            </div>
+            <div class="muted">这台电脑上打开：<code>${esc(access.local)}</code></div>
+            <div class="muted">第一次运行时 Windows 可能问「是否允许访问网络」，请点允许（否则手机连不上）。</div>
+          </div>
+          <div class="access-qr">${access.qrSvg}</div>
+        </div>
+      </div>`
+      : '';
+    const html = `${accessHtml}
       <div class="board">
         <div class="board-head"><span class="board-title">班级信息</span>
           <button class="btn btn-sm btn-primary" type="button" data-save-class>保存</button></div>
@@ -119,6 +144,19 @@ export const settingsPage = {
               toast('已保存');
             } catch (error) {
               toast(error.message, 'err', 7000);
+            }
+            return;
+          }
+
+          const copy = event.target.closest('[data-copy-url]');
+          if (copy) {
+            const url = root.querySelector('[data-lan-url]')?.textContent || '';
+            try {
+              await navigator.clipboard.writeText(url);
+              toast('地址已复制，发到手机上打开也行');
+            } catch {
+              // 浏览器不给剪贴板权限时就如实说，别让老师以为复制成功了
+              toast(`复制失败，请手动输入：${url}`, 'err', 8000);
             }
             return;
           }

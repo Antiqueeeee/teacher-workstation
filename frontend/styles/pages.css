@@ -492,3 +492,14 @@
 .week-cell strong { display: block; font-size: 13px; color: var(--ink-800); }
 .week-cell .muted { font-size: 11.5px; }
 .week-cell.empty { background: var(--ink-50); }
+
+/* ---------- 手机访问（设置页：地址 + 二维码） ---------- */
+.access-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 14px; align-items: center; }
+.access-url { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.access-url code {
+  font-size: 15px; font-weight: 700; color: var(--ink-800);
+  background: var(--ice-50); border: 1px solid var(--ice-200);
+  border-radius: var(--r-sm); padding: 6px 10px;
+}
+.access-qr { text-align: center; }
+.access-qr svg { width: 148px; height: 148px; background: #fff; border-radius: var(--r); padding: 6px; }

@@ -59,20 +59,34 @@ def pid_file() -> Path:
     return data_dir() / PID_FILE_NAME
 
 
-def lan_ip() -> str:
-    """本机在局域网里的地址（手机要访问的就是它）。
+def access_urls(port: int) -> tuple[str, str]:
+    """本机 / 手机两个地址 —— **口径在服务层**（`app/services/access_info.py`），
+    这里只负责在还没起服务时也能算（先补上 backend 路径再导入）。"""
+    if str(BACKEND_DIR) not in sys.path:
+        sys.path.insert(0, str(BACKEND_DIR))
+    from app.services.access_info import access_info  # noqa: PLC0415
 
-    用「连一个外网地址但不真发包」的办法取默认出口网卡的 IP —— 这是标准做法，
-    **不会真的联网**（UDP connect 只是让内核选路由）。离线环境下照样成立。
+    info = access_info(port)
+    return info["local"], info["lan"]
+
+
+def qr_lines(url: str) -> list[str]:
+    """终端二维码（启动窗口里扫一下就省得手输地址）。
+
+    取不到就返回空列表 —— 老终端/特殊编码下画不出来是常事，
+    不该因此让启动失败（界面里的「手机访问」有同一张二维码）。
     """
-    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if str(BACKEND_DIR) not in sys.path:
+        sys.path.insert(0, str(BACKEND_DIR))
     try:
-        probe.connect(("10.255.255.255", 1))
-        return probe.getsockname()[0]
-    except OSError:
-        return "127.0.0.1"
-    finally:
-        probe.close()
+        from app.services.access_info import qr_terminal  # noqa: PLC0415
+
+        rendered = qr_terminal(url)
+        # 先在内存里编码一遍，确认这个终端画得出来（cp936 之类的编码会在这里露馅）
+        rendered.encode(sys.stdout.encoding or "utf-8")
+        return rendered.splitlines()
+    except Exception:  # noqa: BLE001 - 画不出二维码是小事，不能挡住启动
+        return []
 
 
 def health(port: int, timeout: float = 1.0) -> dict | None:
@@ -248,7 +262,7 @@ def open_browser(url: str) -> None:
 
 
 def addresses(port: int) -> tuple[str, str]:
-    return f"http://127.0.0.1:{port}/", f"http://{lan_ip()}:{port}/"
+    return access_urls(port)
 
 
 def banner(port: int, version: str = "", daemon: bool = False) -> None:
@@ -259,6 +273,12 @@ def banner(port: int, version: str = "", daemon: bool = False) -> None:
     print("=" * 58)
     print(f"  这台电脑上打开：  {local}")
     print(f"  手机/平板打开：    {lan}   ← 要和这台电脑连同一个 WiFi")
+    lines = qr_lines(lan)
+    if lines:
+        print()
+        print("  用手机相机/微信扫这张（等于打开上面那个地址）：")
+        for line in lines:
+            print(f"    {line}")
     print(f"  数据目录：        {data_dir()}")
     print(f"  日志：            {data_dir() / 'logs' / 'app.log'}")
     if version:
