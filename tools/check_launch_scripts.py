@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -57,6 +58,12 @@ def check_sh(path: Path, problems: list[str]) -> None:
             problems.append(f"{path.name}：shebang 不是 `#!/bin/bash`（macOS 双击靠它找解释器）")
 
 
+def check_sh_sources_helper(path: Path, text: str, problems: list[str]) -> None:
+    """`.command` 必须**先找运行时**（引用 `_python.sh`），否则会用到系统 python3。"""
+    if "_python.sh" not in text:
+        problems.append(f"{path.name}：没有引用 _python.sh 找运行时（会用到系统 python3）")
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -73,6 +80,12 @@ def main() -> int:
             problems.append(f"缺少 {name}")
             continue
         check_sh(path, problems)
+        if path.suffix == ".command":
+            check_sh_sources_helper(path, path.read_text(encoding="utf-8", errors="replace"), problems)
+            # 文件系统的可执行位只在 POSIX 上有意义（Windows 的 NTFS 没有这一位）；
+            # 交付包里真正管用的是 zip 的 external_attr（见 build_bundle.write_zip）
+            if os.name == "posix" and not path.stat().st_mode & 0o111:
+                problems.append(f"{path.name}：没有可执行位（macOS 双击会失败）")
 
     # launcher.py 要支持脚本里用到的开关
     launcher = REPO / "launcher.py"

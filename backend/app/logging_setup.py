@@ -34,6 +34,13 @@ def setup_logging(level: int = logging.INFO) -> None:
     file_handler.setFormatter(logging.Formatter(_FORMAT))
     root.addHandler(file_handler)
 
+    # uvicorn / alembic / sqlalchemy 的日志也走这里：老师只会发 app.log，
+    # 迁移进度与「启动失败的原因」必须在这份文件里（评审实测过它们只落在控制台）
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "alembic", "sqlalchemy.engine"):
+        logger = logging.getLogger(name)
+        logger.handlers.clear()
+        logger.propagate = True
+
     console = logging.StreamHandler()
     console.setFormatter(logging.Formatter(_FORMAT))
     root.addHandler(console)

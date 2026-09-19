@@ -98,3 +98,95 @@ def test_daemon_timeout_says_still_starting_when_the_child_is_alive(
     assert launcher.cmd_start(daemon=True, want_browser=False, base_port=8790) == 0
     output = capsys.readouterr().out
     assert "已经在启动了" in output and "失败" not in output
+
+
+def test_state_file_of_another_instance_is_not_deleted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """不能删掉**别人**写的状态文件。
+
+    老师快速连点两下时两个启动器会同时起来（uvicorn 先跑迁移、后绑定端口，中间有空窗）。
+    输的那个如果无条件删状态文件，赢家就「人间蒸发」了 ——
+    表现为「状态说没在运行、停止也停不掉，但服务还占着端口」（评审实测）。
+    """
+    import json
+
+    monkeypatch.setenv("TWS_DATA_DIR", str(tmp_path))
+    state_file = tmp_path / launcher.PID_FILE_NAME
+    state_file.write_text(json.dumps({"pid": 999999, "port": 8723}), encoding="utf-8")
+
+    launcher.clear_state()  # 默认只删自己写的
+    assert state_file.exists(), "把别的实例的状态文件删了"
+
+    launcher.clear_state(only_if_mine=False)  # 明确要求清残留时才删
+    assert not state_file.exists()
+
+
+def test_base_port_follows_tws_port(monkeypatch: pytest.MonkeyPatch):
+    """起始端口要跟着 `TWS_PORT` 走：应用也用这个变量拼地址与二维码，两边必须同一个起点。"""
+    monkeypatch.delenv("TWS_PORT", raising=False)
+    assert launcher.base_port() == launcher.DEFAULT_PORT
+
+    monkeypatch.setenv("TWS_PORT", "9100")
+    assert launcher.base_port() == 9100
+
+    for bad in ("abc", "", "70000", "-1"):
+        monkeypatch.setenv("TWS_PORT", bad)
+        assert launcher.base_port() == launcher.DEFAULT_PORT, f"{bad!r} 应该退回默认端口"
+
+
+def test_autostart_command_differs_per_platform(monkeypatch: pytest.MonkeyPatch):
+    """自启命令两平台不一样，写错了老师那边会反复重启或弹浏览器。
+
+    - Windows：没有守护进程，要 `--daemon`（自己脱离终端）；
+    - macOS：launchd 看住**真正的服务进程**，不能再 `--daemon`（那会「派生后立刻退出」，
+      配合 KeepAlive 变成每十几秒拉一个新进程）；
+    - 两边都不能弹浏览器（老师会以为中了病毒）。
+    """
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
+    windows = launcher.autostart_command()
+    assert "--daemon" in windows and "--no-browser" in windows
+
+    monkeypatch.setattr(launcher.sys, "platform", "darwin")
+    macos = launcher.autostart_command()
+    assert "--daemon" not in macos, "launchd 守护时不能再用 --daemon"
+    assert "--no-browser" in macos
+
+
+def test_launch_agent_restarts_only_after_a_crash(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setattr(launcher.sys, "platform", "darwin")
+    monkeypatch.setenv("TWS_DATA_DIR", str(tmp_path))
+    plist = launcher.launch_agent_plist()
+    assert "SuccessfulExit" in plist, "老师点「停止」是正常退出，不该被 launchd 立刻拉回来"
+    assert "RunAtLoad" in plist
+    assert "logs" in plist  # 日志落在数据目录里
+    assert "_python.bat" not in plist
+
+
+def test_port_free_reports_a_listening_port_as_taken(monkeypatch: pytest.MonkeyPatch):
+    """有人监听时不算空闲。
+
+    注意：**不能靠设 SO_REUSEADDR 来探测** —— Windows 上设了它，两个进程能绑同一个端口，
+    实测会出现「把别家程序顶掉」或「绑上了却收不到连接」（老师看窗口说正常、手机打不开）。
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("0.0.0.0", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        assert launcher.port_free(port) is False
+    # 关掉之后应该变成空闲
+    assert launcher.port_free(port) is True
+
+
+def test_running_from_a_zip_warns_about_the_temp_directory(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """在压缩包里直接双击时要说清楚（数据会落在临时目录、重启可能被清掉）。"""
+    monkeypatch.setenv("TEMP", r"C:\Users\x\AppData\Local\Temp")
+    monkeypatch.setattr(launcher, "APP_DIR", Path(r"C:\Users\x\AppData\Local\Temp\Temp1_abc.zip\pkg"))
+    launcher.warn_if_running_from_temp()
+    assert "解压" in capsys.readouterr().out
+
+    monkeypatch.setattr(launcher, "APP_DIR", Path(r"D:\班主任工作台"))
+    launcher.warn_if_running_from_temp()
+    assert capsys.readouterr().out == ""

@@ -32,6 +32,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -43,7 +44,24 @@ BACKEND_DIR = APP_DIR / "backend"
 DEFAULT_PORT = 8723
 PORT_TRIES = 20  # 端口被占就往后找，最多试这么多个
 PID_FILE_NAME = "server.json"
+LOCK_FILE_NAME = "server.lock"
+LOCK_STALE_SECONDS = 90  # 锁超过这么久、又没有服务在监听，就当成上次崩溃留下的
 DAEMON_WAIT_SECONDS = 15.0  # 后台启动后等它起来（首次要建库跑迁移，给足时间）
+STARTUP_WAIT_SECONDS = 60.0  # 只用于「等服务真的开始监听」，超了就说清楚起不来
+
+
+def base_port() -> int:
+    """起始端口：`TWS_PORT` 优先（**应用也用这个变量拼地址与二维码**，两边必须同一个起点）。
+
+    只认启动器的 8723、而应用认 `TWS_PORT` 的话，老师设了 `TWS_PORT=9000` 时
+    界面与二维码会写 9000、服务却在 8723/8724 上跑 —— 评审实测过这种不一致。
+    """
+    raw = os.environ.get("TWS_PORT")
+    try:
+        port = int(raw) if raw not in (None, "") else DEFAULT_PORT
+    except ValueError:
+        return DEFAULT_PORT
+    return port if 1 <= port <= 65535 else DEFAULT_PORT
 
 
 # --------------------------------------------------------------------- 小工具
@@ -102,13 +120,27 @@ def health(port: int, timeout: float = 1.0) -> dict | None:
 
 
 def port_free(port: int) -> bool:
+    """这个端口能不能拿来用。
+
+    **不用 SO_REUSEADDR**：Windows 上设了它，两个进程能绑同一个端口 ——
+    实测（评审复现）会出现「我们绑上了、把原来在监听的那个程序顶掉」、
+    或者两个 pid 同时监听同一端口导致连接被拒。老师那边表现就是
+    「窗口说一切正常，手机就是打不开」。
+
+    两步判断：① 能不能绑上（不设 REUSEADDR）；② 有没有人已经在监听
+    （绑得上但连得上，说明对方用了 REUSEADDR，那也不能用）。
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind(("0.0.0.0", port))
-            return True
         except OSError:
             return False
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.3)
+        if probe.connect_ex(("127.0.0.1", port)) == 0:
+            return False  # 有人在监听：连上了
+    return True
 
 
 def read_state() -> dict | None:
@@ -132,8 +164,61 @@ def write_state(port: int) -> None:
     pid_file().write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def clear_state() -> None:
+def clear_state(*, only_if_mine: bool = True) -> None:
+    """删掉状态文件。
+
+    **默认只删自己写的**：老师快速连点两下时，两个启动器会同时起来
+    （uvicorn 是「先跑迁移、后绑定端口」，这中间有约 1 秒的空窗），
+    输的那个如果无条件删状态文件，赢家就被抹掉了 —— 表现为
+    「`状态` 说没在运行、`停止` 也停不掉，但服务还占着端口」（评审实测）。
+    """
+    if only_if_mine:
+        state = read_state()
+        if state and int(state.get("pid") or 0) != os.getpid():
+            return
     pid_file().unlink(missing_ok=True)
+
+
+def acquire_lock(port: int) -> bool:
+    """抢「正在启动 / 正在运行」的锁（`O_EXCL` 原子创建，Windows/macOS 都成立）。
+
+    为什么需要它：uvicorn 是**先跑 lifespan（数据库迁移）、后绑定端口**，中间有约 1 秒
+    空窗期。老师快速连点两下「启动」时，两个进程都会认为「没在跑、端口是空的」，
+    于是起两个实例写同一个数据库；输的那个还会把赢家的状态文件盖掉又删掉 ——
+    表现为「状态说没在运行、停止也停不掉，但服务还占着端口」（评审实测）。
+
+    「还活着吗」不查进程表（跨平台麻烦），看两件事：锁新不新、以及有没有服务在监听。
+    """
+    path = data_dir() / LOCK_FILE_NAME
+    data_dir().mkdir(parents=True, exist_ok=True)
+    for attempt in (1, 2):
+        try:
+            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if attempt == 2:
+                return False
+            age = time.time() - path.stat().st_mtime if path.exists() else LOCK_STALE_SECONDS + 1
+            if age < LOCK_STALE_SECONDS or health(port) is not None:
+                return False  # 有人在启动或已经在跑
+            path.unlink(missing_ok=True)  # 上次崩溃留下的陈旧锁
+            continue
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            json.dump({"pid": os.getpid(), "port": port}, stream)
+        return True
+    return False
+
+
+def release_lock() -> None:
+    """释放锁（只放自己抢的那把）。"""
+    path = data_dir() / LOCK_FILE_NAME
+    if not path.exists():
+        return
+    try:
+        holder = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        holder = {}
+    if int(holder.get("pid") or 0) in (0, os.getpid()):
+        path.unlink(missing_ok=True)
 
 
 def running() -> dict | None:
@@ -165,12 +250,23 @@ def python_for_autostart() -> str:
 
 
 def autostart_command() -> list[str]:
-    """自启时要跑的命令（跨平台共用同一份，两边只是外壳不同）。"""
-    return [python_for_autostart(), str(Path(__file__).resolve()), "--daemon"]
+    """自启时要跑的命令（**两个平台不一样**）。
+
+    - Windows：注册表只能「登录时跑一条命令」，没有守护进程 —— 所以用
+      `pythonw.exe`（无窗口）+ `--daemon`（自己脱离终端）。
+    - macOS：交给 launchd 守护，**它要看住真正的服务进程**，所以直接跑前台版本。
+      如果这里也传 `--daemon`，进程会「派生一个子进程后立刻退出 0」，
+      而 `KeepAlive` 对正常退出也会重启 → 变成每十几秒反复拉一个新进程（评审指出）。
+    - 两边都带 `--no-browser`：开机自启不该弹浏览器窗口（老师会以为中了病毒）。
+    """
+    script = str(Path(__file__).resolve())
+    if sys.platform == "darwin":
+        return [python_for_autostart(), script, "--no-browser"]
+    return [python_for_autostart(), script, "--daemon", "--no-browser"]
 
 
 def launch_agent_plist() -> str:
-    """macOS 的 LaunchAgent：登录即起、崩了自动重启、没有窗口。"""
+    """macOS 的 LaunchAgent：登录即起、崩了才重启、没有窗口。"""
     command = autostart_command()
     args = "\n".join(f"        <string>{part}</string>" for part in command)
     log = data_dir() / "logs"
@@ -185,7 +281,11 @@ def launch_agent_plist() -> str:
     </array>
     <key>WorkingDirectory</key><string>{APP_DIR}</string>
     <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
+    <!-- 崩了才重启：老师点「停止」是正常退出，不该被 launchd 立刻拉回来 -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key><false/>
+    </dict>
     <key>StandardOutPath</key><string>{log / "launchd.out.log"}</string>
     <key>StandardErrorPath</key><string>{log / "launchd.err.log"}</string>
 </dict>
@@ -277,6 +377,26 @@ def open_browser(url: str) -> None:
 
 def addresses(port: int) -> tuple[str, str]:
     return access_urls(port)
+
+
+def warn_if_running_from_temp() -> None:
+    """在**压缩包临时目录**里直接双击的提醒。
+
+    Windows 双击 zip 里的文件会把它解到 `%TEMP%\Temp1_xxx.zip\`，
+    数据就落在那个临时目录里 —— 重启后可能被清理，老师的记录看起来「丢了」。
+    这个场景我没法在 GUI 里复现，但路径特征很好认，认出来就明确提醒。
+    """
+    temp = os.environ.get("TEMP") or os.environ.get("TMP") or ""
+    app = str(APP_DIR).lower()
+    looks_temp = (temp and app.startswith(temp.lower().rstrip("\/"))) or f"{os.sep}temp" in app
+    looks_unzipped = ".zip" in app or "temp1_" in app or "temp" in Path(app).name.lower()
+    if looks_temp and looks_unzipped:
+        print()
+        print("!" * 58)
+        print("  注意：你像是**直接在压缩包里双击**运行的。")
+        print("  这样数据会存在系统临时目录里，重启电脑后可能被清掉。")
+        print("  请先把压缩包**解压到一个固定文件夹**（比如桌面），再从那里双击「启动」。")
+        print("!" * 58)
 
 
 def banner(port: int, version: str = "", daemon: bool = False) -> None:
@@ -380,7 +500,34 @@ def spawn_daemon(port: int) -> None:
     subprocess.Popen(command, **kwargs)
 
 
-def serve(port: int, daemon: bool, detached: bool) -> int:
+def announce_when_ready(port: int, version: str, daemon: bool, want_browser: bool) -> threading.Thread:
+    """等**真的在监听**了再打 banner（顺便开浏览器）。
+
+    为什么不在 `uvicorn.run` 之前直接打：起不来时（端口被抢、库是只读的、
+    数据目录没权限）老师会先看到一屏「已经在运行」，然后窗口一闪就没 ——
+    他拿不到任何原因（评审实测：console 与日志里一行错误都没有）。
+    现在起不来会有明确提示，起来之前也不会假报成功。
+    """
+
+    def worker() -> None:
+        deadline = time.time() + STARTUP_WAIT_SECONDS
+        while time.time() < deadline:
+            if health(port) is not None:
+                banner(port, version, daemon)
+                if want_browser:
+                    open_browser(f"http://127.0.0.1:{port}/")
+                return
+            time.sleep(0.25)
+        print("服务好像没能起来（等了半分钟还没开始监听）—— 请把这两份日志发给技术同事：")
+        print(f"  {data_dir() / 'logs' / 'server.out.log'}")
+        print(f"  {data_dir() / 'logs' / 'app.log'}")
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    return thread
+
+
+def serve(port: int, daemon: bool, detached: bool, want_browser: bool = False) -> int:
     """真正跑服务的那一步（前台与后台都走这里）。"""
     if detached:
         redirect_output()
@@ -397,13 +544,32 @@ def serve(port: int, daemon: bool, detached: bool) -> int:
 
     import uvicorn  # noqa: PLC0415
 
+    warn_if_running_from_temp()
+    if not acquire_lock(port):
+        print("已经有实例在启动或运行了 —— 稍等一下，或用「状态」看它跑没跑。")
+        return 0
     print(f"班主任工作台 v{APP_VERSION} 正在启动…（数据目录：{data_dir()}）")
     write_state(port)
-    banner(port, APP_VERSION, daemon)
+    announce_when_ready(port, APP_VERSION, daemon, want_browser=want_browser)
     try:
-        uvicorn.run(app, host=os.environ.get("TWS_HOST", "0.0.0.0"), port=port, log_level="info")
+        uvicorn.run(
+            app,
+            host=os.environ.get("TWS_HOST", "0.0.0.0"),
+            port=port,
+            log_level="info",
+            # 别让 uvicorn 自己重配日志：用我们那套（写进 data/logs/app.log），
+            # 否则它启动失败的报错只落在控制台上，老师关掉窗口就查不到了
+            log_config=None,
+        )
+    except Exception as exc:  # noqa: BLE001 - 起不来的原因必须让老师看见
+        print()
+        print(f"启动失败：{type(exc).__name__}: {exc}")
+        print("  常见原因：端口被别的程序占用、数据目录没有写权限、数据库被别的程序锁着。")
+        print(f"  日志：{data_dir() / 'logs' / 'app.log'}")
+        return 1
     finally:
         clear_state()
+        release_lock()
         print("服务已停止。")
     return 0
 
@@ -426,7 +592,7 @@ def cmd_start(daemon: bool, want_browser: bool, base_port: int) -> int:
         return 1
 
     if not daemon:
-        return serve(port, daemon=False, detached=False)
+        return serve(port, daemon=False, detached=False, want_browser=want_browser)
 
     # 后台：起一个脱离终端的自己，然后等它真的起来
     spawn_daemon(port)
@@ -477,7 +643,7 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_status()
     if args.detached:
         return serve(args.port or DEFAULT_PORT, daemon=True, detached=True)
-    return cmd_start(args.daemon, not args.no_browser, args.port or DEFAULT_PORT)
+    return cmd_start(args.daemon, not args.no_browser, args.port or base_port())
 
 
 if __name__ == "__main__":

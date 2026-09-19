@@ -270,6 +270,25 @@ def normalize_scripts(package: Path) -> None:
     log(f"  行尾与权限已收拾：{len(BAT_SCRIPTS)} 个 .bat → CRLF，{len(SH_SCRIPTS)} 个脚本 → 755")
 
 
+def _zip_mode(path: Path) -> int:
+    """放进 zip 时给这个文件什么权限位。
+
+    **不能一律 0644**：`runtime/bin/python3` 这类文件必须是可执行的，否则整包在 macOS 上
+    「交付即坏」（`.command` 里的 `[ ! -x "$PY" ]` 成立 → 退回系统 python3 → 没装
+    开发者工具的 Mac 直接弹窗要装 CLI 工具）。
+    Windows 的 NTFS 没有 POSIX 权限位（stat 里恒为 0666），所以那里按后缀判断。
+    """
+    if path.suffix in {".command", ".sh"}:
+        return 0o755
+    if path.suffix.lower() in {".bat", ".cmd"}:
+        # Windows 的批处理不需要（也不看）zip 里的权限位；
+        # 另外 CPython 在 Windows 上会把 .bat 的 stat() 报成「可执行」，
+        # 真按它写进去会让别的解压工具困惑
+        return 0o644
+    mode = path.stat().st_mode
+    return 0o755 if mode & 0o111 else 0o644
+
+
 def write_zip(package: Path, archive: Path, root: str) -> None:
     """打 zip：带**顶层目录**（右键「解压到当前文件夹」也不会散一地），
     并给 `.command` / `.sh` 写上可执行位（macOS 双击靠它）。"""
@@ -280,7 +299,7 @@ def write_zip(package: Path, archive: Path, root: str) -> None:
             relative = f"{root}/{path.relative_to(package).as_posix()}"
             info = zipfile.ZipInfo(relative, date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = (0o755 if path.suffix in {".command", ".sh"} else 0o644) << 16
+            info.external_attr = (_zip_mode(path) << 16)
             bundle.writestr(info, path.read_bytes())
 
 
@@ -396,7 +415,7 @@ def verify(package: Path, platform_key: str) -> None:
         "port = state['port'];"
         "data = json.loads(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/v1/system/access').read())['data'];"
         "assert data['lan'].startswith('http://') and data['qrSvg'].startswith('<svg');"
-        "assert f':{port}/' in data['lan'], f'二维码/地址里的端口 {data[\"lan\"]} 与实际端口 {port} 不一致';"
+        "assert data['port'] == port, f'地址里的端口 {data[\"port\"]} 与实际端口 {port} 不一致';"
         "print('访问地址与二维码 OK：' + data['lan'])"
     )
     subprocess.run([str(python), "-c", probe], check=True, cwd=package, env=env)
