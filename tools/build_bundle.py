@@ -44,10 +44,11 @@ VENDOR = REPO / "vendor"
 DIST = REPO / "dist"
 STAGE = REPO / "build" / "_stage"
 
-# python-build-standalone：可搬移的 CPython，专为「拷走就能跑」设计
-PBS_RELEASE = "20260901"
-PBS_PYTHON = "3.11.16"
-PBS_BASE = f"https://github.com/astral-sh/python-build-standalone/releases/download/{PBS_RELEASE}"
+# 运行时的下载与解压**只有一份实现**（`tools/pbs_runtime.py`）：
+# 「打交付包」与「克隆即用自举」用的必须是同一个版本，否则两边会出现行为差异
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from pbs_runtime import PBS_RELEASE, PBS_PYTHON, asset_name, asset_url, extract_runtime  # noqa: E402
 
 PLATFORMS = {
     "windows-x64": {
@@ -143,11 +144,11 @@ def download(url: str, target: Path) -> Path:
 
 
 def fetch_runtime(platform: dict, offline: bool) -> Path:
-    asset = f"cpython-{PBS_PYTHON}+{PBS_RELEASE}-{platform['pbs']}-install_only_stripped.tar.gz"
+    asset = asset_name(platform["pbs"])
     target = VENDOR / "python" / asset
     if not target.exists() and offline:
         raise SystemExit(f"离线模式但缓存里没有 {asset} —— 先联网跑一次，或手动放进 {target.parent}")
-    return download(f"{PBS_BASE}/{asset}", target)
+    return download(asset_url(platform["pbs"]), target)
 
 
 def fetch_wheels(platform: dict, offline: bool) -> None:
@@ -178,23 +179,6 @@ def fetch_wheels(platform: dict, offline: bool) -> None:
     ]
     log("  拉依赖轮子（只下轮子、不编译）：")
     subprocess.run(command, check=True)
-
-
-def extract_runtime(tarball: Path, destination: Path) -> None:
-    """解开运行时。`install_only` 包里的顶层目录是 `python/`，这里摊平成 `runtime/`。"""
-    if destination.exists():
-        shutil.rmtree(destination)
-    destination.mkdir(parents=True)
-    with tarfile.open(tarball, "r:gz") as archive:
-        members = archive.getmembers()
-        for member in members:
-            # 去掉顶层 `python/`（PBS 的 install_only 布局）
-            parts = Path(member.name).parts
-            if len(parts) < 2 or parts[0] != "python":
-                continue
-            member.name = str(Path(*parts[1:]))
-            archive.extract(member, destination, filter="tar")
-    log(f"  运行时解压到 {destination.relative_to(REPO)}")
 
 
 def install_deps(platform: dict, runtime: Path, offline: bool) -> None:
@@ -318,7 +302,7 @@ def build_package(platform_key: str, offline: bool) -> Path:
     log("1) 取运行时")
     tarball = fetch_runtime(platform, offline)
     runtime = STAGE / "runtime"
-    extract_runtime(tarball, runtime)
+    extract_runtime(tarball, runtime, log=log)
 
     log("2) 取依赖轮子")
     fetch_wheels(platform, offline)

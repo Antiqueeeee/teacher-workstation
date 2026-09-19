@@ -69,13 +69,32 @@
 
 ## 快速开始
 
-**老师怎么用**：把整个文件夹解压到自己的电脑上 → **双击「启动」** → 浏览器自动打开界面，
-黑窗口里会写明「手机该访问哪个地址」。详见 **`使用说明.md`**。
+**最简单的方式（克隆即用）**：把这个项目克隆下来，跑一次自举，然后双击启动脚本。
 
-不用装 Python、不用装数据库、不用装 Docker —— 交付包自带 Python 运行时（`runtime/`），
-数据全在这个文件夹的 `data/` 目录里（整包拷走就是备份）。
+```bash
+git clone <仓库地址> teacher-workstation
+cd teacher-workstation
 
-开发机上怎么跑：
+# 1. 自举：把自带的 Python 运行时与依赖装进**项目自己的** runtime/ 目录
+#    （需要联网一次；之后完全离线可用。你系统里的 Python 不受影响）
+python3 tools/bootstrap.py          # Windows: python tools\bootstrap.py
+```
+
+然后：Windows **双击 `启动.bat`**、macOS **双击 `启动.command`** —— 浏览器会打开界面，
+黑窗口里写着「手机该访问哪个地址」和一张二维码。平时用 `后台启动` + `设置开机自启` 更省事。
+详见 **`使用说明.md`**。
+
+不用装数据库、不用装 Docker，也不需要自己装 Python（自举会把一份可搬移的 Python
+放进项目目录，只用它跑服务）。数据全在 **项目根目录的 `data/`** 里，整包拷走就是备份。
+
+> **完全离线的机器**（客户现场那台不联网的电脑）：用自带运行时的交付包 ——
+> `python tools/build_bundle.py --platform windows-x64` 生成一个 zip，解压双击即用，
+> 不需要联网、不需要任何前置安装。
+
+**给 AI 助手 / 自动化**：`AGENTS.md` 末尾有一节「怎么把这个项目跑起来」，
+列出了自举、启动、查状态（`--status --json`）、停止的确切命令与注意事项。
+
+### 开发机上怎么跑
 
 ```bash
 # 1. 装依赖（用仓库里的 .validation/conda，Python 3.11）
@@ -97,12 +116,6 @@ cd backend && PYTHONPATH=. ../.validation/conda/python.exe -m pytest -q
 # 4. 提交前检查
 python tools/check_file_size.py
 python tools/check_frontend.py
-python tools/check_launch_scripts.py
-
-# 5. 构建交付包（给老师的那份 zip；约 48 MB）
-python tools/build_bundle.py --platform windows-x64
-python tools/build_bundle.py --platform macos-arm64   # 必须在 macOS 上跑
-```
 
 首次启动会自动建目录、跑迁移，并创建一个**空的**默认班级（不是演示数据）。
 数据目录默认是**包根目录的 `data/`**（不是 `backend/` 里），可用 `TWS_DATA_DIR` 覆盖。

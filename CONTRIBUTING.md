@@ -247,19 +247,20 @@ python tools/build_bundle.py --platform macos-arm64     # 或 macos-x64
   (d) 允许它**把命令丢在自己的会话里**（老师关掉助手就可能连服务一起停）——
       所以文档要求「以 `--status --json` 或浏览器能否打开为准，不能只听一句『已启动』」。
 
-### 10.4 Python 环境：老师那边不碰他自己装的
+### 10.4 Python 环境：不碰用户自己装的那份
 
-- 交付包**自带一份 Python**（`runtime/`，python-build-standalone 的可搬移发行版），
-  运行期只用它：不写 PATH、不装任何包、不碰系统 Python 与全局 site-packages；
-- **脚本不许悄悄退回系统 Python**：`_python.bat` / `_python.sh` 在找不到 `runtime/` 时会
-  明确报错并要求重新解压完整包（开发机要用系统 Python 得显式设 `TWS_ALLOW_SYSTEM_PYTHON=1`）。
-  理由：退回去用老师的 Python 等于依赖他的环境，而他的环境里没有我们的依赖、版本也可能不对；
-- 唯一的「包外写入」是老师**主动**点「设置开机自启」时写的注册表项 / LaunchAgent，以及
-  浏览器打开页面 —— 其余读写都在包内（`data/`，可用 `TWS_DATA_DIR` 指到别处）。
-
-**为什么 macOS 包必须在 macOS 上构建**：macOS 运行时压缩包里含符号链接
-（`bin/python3 → python3.11`），在 Windows 上解压会变成普通文件，到 Mac 上就坏了。
-构建脚本会直接拒绝（`TWS_BUILD_CROSS=1` 可强行跳过，但未验证）。
+- **交付形态以「克隆即用」为主**：克隆下来跑一次 `python tools/bootstrap.py`
+  （或直接双击启动脚本，它会自动调）→ 把自带运行时装进**项目自己的 `runtime/`**，
+  依赖也装进那个运行时自己的 site-packages（`tools/pbs_runtime.py` 负责下载与解压，
+  与 `build_bundle.py` **共用同一份实现**，两边的版本永远一致）；
+- 系统里的 Python **只用来当引导**（跑 `bootstrap.py`）：不 `pip install` 到全局、
+  不写 PATH、不动 conda/venv 之类的东西。跑服务的永远是 `runtime/` 里那个；
+- 脚本不许把跑服务用的 `PY` 指向系统 Python：`_python.bat` / `_python.sh` 缺 `runtime/` 时
+  去自举，自举不成才报错（`check_launch_scripts.py` 用行首锚定的正则守着这两条，
+  注意别用手写子串匹配 —— `BOOTSTRAP_PY="$(command -v python3)"` 里也含 `PY="$(command -v`）；
+- **完全离线的机器**走交付包（`build_bundle.py`，自带运行时，无需联网）——
+  两条路都保留，但**默认讲克隆那条**；
+- 唯一的「包外写入」是用户**主动**点的「设置开机自启」写的注册表项 / LaunchAgent。
 
 ---
 

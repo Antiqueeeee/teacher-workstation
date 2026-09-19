@@ -97,14 +97,25 @@ def main() -> int:
             if f'"{flag}"' not in text:
                 problems.append(f"launcher.py 里没有 {flag}（启动脚本会用到它）")
 
-    # 自带的运行时是**唯一**允许用的 Python：找不到它时必须明确报错，
-    # 不许悄悄退回系统 Python（那等于依赖老师自己的环境，用户明确要求过不要）
+    # 自带的运行时是**唯一**跑服务的 Python（用户明确要求不要影响他自己的环境）：
+    #   1) 缺运行时要去自举（tools/bootstrap.py）—— 这是「克隆即用」的前提；
+    #   2) 系统里的 Python 只允许当**引导**（下载与安装），绝不能变成跑服务的那个。
     for name in HELPERS:
         path = REPO / name
-        if path.exists() and "TWS_ALLOW_SYSTEM_PYTHON" not in path.read_text(
-            encoding="utf-8", errors="replace"
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if "bootstrap.py" not in text:
+            problems.append(f"{name}：缺少运行时不会去自举（tools/bootstrap.py）")
+        if "runtime" not in text:
+            problems.append(f"{name}：没有指向自带的运行时目录")
+        # 用行首锚定，别写成子串匹配：`BOOTSTRAP_PY="$(command -v python3)"` 里也含 `PY="$(command -v`
+        if re.search(r'^\s*set\s+"PY=python"', text, re.MULTILINE) or re.search(
+            r'^\s*PY="\$\(command -v', text, re.MULTILINE
         ):
-            problems.append(f"{name}：没有 TWS_ALLOW_SYSTEM_PYTHON 开关 —— 会悄悄用系统 Python")
+            problems.append(f"{name}：会把跑服务用的 PY 指到系统 Python 上（只能用来当引导）")
+        if name.endswith(".sh") and "BOOTSTRAP_PY" not in text:
+            problems.append(f"{name}：引导用的系统 python3 应该单独一个变量，别混进 PY")
 
     # 那几个脚本要真的能互相找到：.bat 里引用的 helper 必须存在
     for name in BAT_SCRIPTS:
