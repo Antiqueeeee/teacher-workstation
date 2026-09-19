@@ -200,3 +200,27 @@ cmd //c "mklink /J runtime D:\CodeSpace\teacher-workstation\.validation\conda"
 ```
 
 然后双击（或用 `cmd /c`）根目录的 `启动.bat` 就是老师的体验 —— 数据会落在 `<包根>/data/`。
+
+### 10.2 怎么构建真正的交付包
+
+```bash
+# Windows（在 Windows 上）
+python tools/build_bundle.py --platform windows-x64
+# macOS（**必须在 macOS 上**，见下）
+python tools/build_bundle.py --platform macos-arm64     # 或 macos-x64
+```
+
+它做四件事（`tools/build_bundle.py`）：
+
+1. 下 python-build-standalone 的 `install_only` 运行时（可搬移，专为分发设计）→ `runtime/`；
+2. 按 `backend/requirements.txt` 下**轮子**到 `vendor/wheels/<平台>/`（缓存下来，下次 `--offline` 不再联网），
+   再解开进运行时的 site-packages —— 目标机器不需要 pip、不需要网络；
+3. 拷代码 + `launcher.py` + 双击脚本 + 使用说明，**跳过** `data/`、`tests/`、`raw-material/` 等；
+4. 收拾行尾与权限（`.bat` → CRLF、`.command` → 755）并打 zip（带顶层目录）。
+
+构建完它会**自己验一遍**：用交付包里的运行时导入全部依赖，再真起一次服务、查一次状态、停掉。
+产物在 `dist/班主任工作台-<平台>-<版本>.zip`（约 48 MB）。
+
+**为什么 macOS 包必须在 macOS 上构建**：macOS 运行时压缩包里含符号链接
+（`bin/python3 → python3.11`），在 Windows 上解压会变成普通文件，到 Mac 上就坏了。
+构建脚本会直接拒绝（`TWS_BUILD_CROSS=1` 可强行跳过，但未验证）。
